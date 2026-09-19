@@ -136,3 +136,5 @@ rabbitmq:
 
 networkPolicies:
   enabled: false
+
+simularFallo: "true"
