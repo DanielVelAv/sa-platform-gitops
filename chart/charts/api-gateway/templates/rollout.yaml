@@ -63,7 +63,8 @@ spec:
             {{- include "sa-platform.envFromComun" . | nindent 12 }}
           env:
             {{- include "sa-platform.envSecretos" . | nindent 12 }}
-          {{- include "sa-platform.probes" . | nindent 10 }}
+            - name: SIMULAR_FALLO
+              value: {{ .Values.simularFallo | default "false" | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
