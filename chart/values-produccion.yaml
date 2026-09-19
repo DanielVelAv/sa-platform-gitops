@@ -71,24 +71,28 @@ api-gateway:
   replicas: 1
 
 ms-auth:
+  replicas: 0
   image:
     repository: sa-p7/ms-auth
     tag: ci
   replicas: 1
 
 ms-lotes:
+  replicas: 0
   image:
     repository: sa-p7/ms-lotes
     tag: ci
   replicas: 1
 
 ms-aprobaciones:
+  replicas: 0
   image:
     repository: sa-p7/ms-aprobaciones
     tag: ci
   replicas: 1
 
 ms-notificaciones:
+  replicas: 0
   image:
     repository: sa-p7/ms-notificaciones
     tag: ci
