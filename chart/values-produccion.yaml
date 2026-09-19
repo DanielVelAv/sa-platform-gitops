@@ -67,7 +67,7 @@ limitRange:
 api-gateway:
   image:
     repository: sa-p7/api-gateway
-    tag: ci
+    tag: v1-estable
   replicas: 1
 
 ms-auth:
