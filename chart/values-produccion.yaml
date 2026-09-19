@@ -100,10 +100,12 @@ ms-notificaciones:
 
 cronjobs:
   registro:
+    schedule: "0 0 1 1 *"
     image:
       repository: sa-p7/cronjob-registro
       tag: ci
   resumen:
+    schedule: "0 0 1 1 *"
     image:
       repository: sa-p7/cronjob-resumen
       tag: ci
