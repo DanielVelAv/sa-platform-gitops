@@ -8,7 +8,7 @@ metadata:
   labels:
     {{- include "sa-platform.etiquetas" $ctx | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicas | default 2 }}
+  replicas: {{ if hasKey .Values "replicas" }}{{ .Values.replicas }}{{ else }}2{{ end }}
   # maxUnavailable: 0 obliga a que el pod nuevo este Ready ANTES de
   # retirar el viejo. Es lo que permite actualizar sin caida de servicio.
   strategy:
