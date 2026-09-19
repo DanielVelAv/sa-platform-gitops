@@ -1,0 +1,37 @@
+{{- $nombre := .Values.nombre -}}
+{{- $ctx := dict "raiz" . "componente" $nombre -}}
+{{/*
+AnalysisTemplate real: consulta el endpoint /health de api-gateway por
+HTTP de verdad (provider "web"), no una simulacion. Si suficientes
+mediciones fallan, Argo Rollouts marca el AnalysisRun como Failed y
+revierte el canary automaticamente -- es el mecanismo de reversion
+que exige el enunciado.
+
+El nombre del Service y el namespace ya se conocen al momento en que
+Helm renderiza este archivo (no cambian en tiempo de ejecucion), asi
+que se interpolan directo con Helm -- sin variables diferidas de Argo,
+que solo agregan riesgo de sintaxis sin necesidad real aqui.
+
+successCondition compara contra la cadena "ok" (no un booleano): el
+endpoint real devuelve {"estado":"ok",...}, y jsonPath extrae ese
+campo como texto.
+*/}}
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: api-gateway-health-check
+  namespace: {{ .Values.global.namespace | quote }}
+spec:
+  metrics:
+    - name: health-check-200
+      # Se repite 5 veces, cada 10s: tiempo real para que el pod nuevo
+      # este listo, no una comprobacion instantanea fingida.
+      interval: 10s
+      count: 5
+      successCondition: "result == \"ok\""
+      failureLimit: 2
+      provider:
+        web:
+          url: "http://{{ include "sa-platform.nombreCompleto" $ctx }}.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.puerto }}/health"
+          timeoutSeconds: 5
+          jsonPath: "{$.estado}"
