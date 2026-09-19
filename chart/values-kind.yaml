@@ -1,0 +1,140 @@
+# =====================================================================
+# values-kind.yaml — despliegue efimero dentro del pipeline de CI/CD.
+#
+# El auxiliar de la P7 indico explicitamente que no hace falta nube
+# real: basta con emular un cluster de Kubernetes local (kind) dentro
+# del propio runner de GitHub Actions, correr el despliegue ahi, y
+# verificarlo. El cluster vive solo durante el job y se destruye solo
+# al terminar -- cero costo, cero credenciales de nube.
+#
+# Uso (dentro del workflow):
+#   helm upgrade --install sa-platform ./charts/sa-platform \
+#     --namespace sa-p7 --create-namespace \
+#     -f charts/sa-platform/values.yaml \
+#     -f charts/sa-platform/values-kind.yaml \
+#     -f secretos-ci.yaml \
+#     --set-file secrets.jwtPrivateKey=keys/jwt_private.pem \
+#     --set-file secrets.jwtPublicKey=keys/jwt_public.pem
+# =====================================================================
+
+global:
+  namespace: sa-p7
+  logLevel: info
+  # Las imagenes se construyen en el mismo job y se cargan directo al
+  # cluster con `kind load docker-image`, sin pasar por ningun
+  # registro. imagePullPolicy debe ser "Never": si fuera Always o
+  # IfNotPresent con la imagen ausente, el kubelet intentaria
+  # descargarla de internet y fallaria (el tag local no existe en
+  # ningun registro real).
+  imagePullPolicy: Never
+  # Bitnami retiro su catalogo publico; se usa el mismo ajuste que ya
+  # se valido en la P6.
+  security:
+    allowInsecureImages: true
+  # El HPA controla spec.replicas en cuanto existe (ver el conflicto
+  # resuelto en la P6): se baja el minimo para que quepa en el runner.
+  hpa:
+    minReplicas: 1
+    maxReplicas: 2
+  # Un runner estandar de GitHub Actions tiene ~2 CPU / 7GB RAM.
+  # Bastante mas ajustado que el equipo local o incluso que 2 nodos
+  # pequenos de DOKS -- la cuota debe ser conservadora.
+  resourceQuota:
+    requestsCpu: "1500m"
+    requestsMemory: 2Gi
+    limitsCpu: "3"
+    limitsMemory: 3Gi
+    pods: "20"
+
+# ---------------------------------------------------------------------
+# Los 5 microservicios: imagenes locales (sin registro), 1 replica,
+# recursos minimos -- solo se necesita demostrar que el pipeline
+# despliega y verifica, no soportar carga real.
+# ---------------------------------------------------------------------
+api-gateway:
+  image:
+    repository: sa-p7/api-gateway
+    tag: ci
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+ms-auth:
+  image:
+    repository: sa-p7/ms-auth
+    tag: ci
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 200m, memory: 192Mi }
+
+ms-lotes:
+  image:
+    repository: sa-p7/ms-lotes
+    tag: ci
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+ms-aprobaciones:
+  image:
+    repository: sa-p7/ms-aprobaciones
+    tag: ci
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 200m, memory: 192Mi }
+
+ms-notificaciones:
+  image:
+    repository: sa-p7/ms-notificaciones
+    tag: ci
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 200m, memory: 192Mi }
+
+cronjobs:
+  registro:
+    image:
+      repository: sa-p7/cronjob-registro
+      tag: ci
+  resumen:
+    image:
+      repository: sa-p7/cronjob-resumen
+      tag: ci
+
+# Sin Ingress ni LoadBalancer: no hace falta exposicion publica para
+# esta practica. La verificacion se hace desde dentro del runner
+# (kubectl exec / port-forward), no desde internet.
+ingress:
+  enabled: false
+
+postgresql:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: "17.6.0-debian-12-r4"
+  primary:
+    persistence:
+      # kind trae su propio provisioner (local-path), distinto al de
+      # DigitalOcean. No se fuerza un storageClass explicito: se deja
+      # que kind use el suyo por defecto (marcado "standard").
+      size: 500Mi
+
+rabbitmq:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/rabbitmq
+    tag: "4.1.3-debian-12-r1"
+  persistence:
+    size: 500Mi
+
+# La NetworkPolicy publica no aplica aqui (no hay Ingress externo que
+# whitelistear ni trafico de internet que dejar pasar). Se deja
+# desactivada para no interferir con las verificaciones internas del
+# pipeline.
+networkPolicies:
+  enabled: false

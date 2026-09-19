@@ -1,0 +1,83 @@
+{{- if .Values.worker.enabled -}}
+{{- $nombre := printf "%s-worker" .Values.nombre -}}
+{{- $ctx := dict "raiz" . "componente" $nombre -}}
+# =====================================================================
+# Worker consumidor del broker.
+#
+# Usa la MISMA imagen que ms-notificaciones pero con otro comando. Se
+# despliega aparte del API a proposito: asi se puede escalar a 0 para
+# demostrar que los mensajes se acumulan en la cola durable y se
+# procesan al restaurarlo, sin perdida (requisito D).
+#
+#   kubectl scale deploy/<release>-ms-notificaciones-worker --replicas=0 -n sa-p5
+#   ... publicar eventos ...
+#   kubectl scale deploy/<release>-ms-notificaciones-worker --replicas=1 -n sa-p5
+# =====================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sa-platform.nombreCompleto" $ctx }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas | default 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "sa-platform.etiquetasSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ toYaml .Values.global.config | sha256sum }}
+      labels:
+        {{- include "sa-platform.etiquetasSelector" $ctx | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "sa-platform.nombreCompleto" (dict "raiz" . "componente" .Values.nombre) }}
+      securityContext:
+        runAsNonRoot: {{ .Values.global.securityContext.runAsNonRoot | default true }}
+        fsGroup: {{ .Values.global.securityContext.runAsGroup | default 1000 }}
+      containers:
+        - name: {{ $nombre | quote }}
+          image: {{ include "sa-platform.imagen" . | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          # Mismo contenedor, otro punto de entrada: aqui no se sirve HTTP,
+          # se consume de la cola.
+          command: ["python", "-m", "app.worker"]
+          envFrom:
+            {{- include "sa-platform.envFromComun" . | nindent 12 }}
+          env:
+            {{- include "sa-platform.envSecretos" . | nindent 12 }}
+          # El worker no expone HTTP, asi que las probes no pueden ser
+          # httpGet. Escribe /tmp/latido en cada vuelta del bucle y las
+          # probes verifican que ese archivo siga fresco.
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "test -f /tmp/listo"]
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "test -f /tmp/listo"]
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            # Si el latido tiene mas de 90 segundos, el consumidor quedo
+            # colgado y conviene reiniciarlo.
+            exec:
+              command: ["sh", "-c", "test $(( $(date +%s) - $(stat -c %Y /tmp/latido 2>/dev/null || echo 0) )) -lt 90"]
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            {{- include "sa-platform.contextoSeguridad" . | nindent 12 }}
+          volumeMounts:
+            {{- include "sa-platform.montajesTemporales" . | nindent 12 }}
+      volumes:
+        {{- include "sa-platform.volumenesTemporales" . | nindent 8 }}
+{{- end }}

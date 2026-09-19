@@ -1,0 +1,22 @@
+# Valores por defecto del subchart ms-lotes.
+# El chart padre los sobreescribe desde su propio values.yaml,
+# en la clave "ms-lotes". No edite este archivo: edite el del padre.
+enabled: true
+puerto: 3002
+nombre: ms-lotes
+image:
+  repository: sa-p5/ms-lotes
+  tag: ""
+replicas: 2
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 256Mi }
+probes:
+  startup: { path: /health, periodSeconds: 5, failureThreshold: 12 }
+  readiness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+  liveness: { path: /health, periodSeconds: 20, failureThreshold: 3 }
+extraVolumes: []
+extraVolumeMounts: []
+-e usaBaseDatos: true
+usaBroker: false
+secretosExtra: []

@@ -1,0 +1,35 @@
+{{- if not .Values.global.namespaceGestionadoExternamente -}}
+{{/*
+El namespace lo crea el propio chart, no `kubectl create namespace`
+(requisito del enunciado de la P5). Helm ordena los recursos e instala
+los Namespace antes que todo lo demas, asi que el resto de objetos ya
+encuentran el namespace existente.
+
+Se instala con  --namespace <ambiente>  y SIN  --create-namespace:
+si se usara esa bandera, Helm lo crearia por fuera del release y
+chocaria con este manifiesto.
+
+EXCEPCION (Practica 8): con GitOps, el namespace, la ResourceQuota, el
+LimitRange y el RBAC pasan a ser responsabilidad de Terraform (ver
+P8/terraform/), no del chart -- asi lo aclaro el auxiliar en el foro.
+
+OJO CON EL PATRON: NO se uso `.Values.global.crearNamespace | default
+true`, porque Sprig trata `false` como un valor "vacio" y lo
+reemplazaria de vuelta por `true` -- el chart habria seguido creando
+el namespace aunque se pusiera expresamente `crearNamespace: false`.
+En su lugar, la bandera esta invertida ("namespaceGestionadoExternamente")
+y se usa `not` sin ningun `default`: cuando la clave no existe (el
+caso de P5/P6/P7), su valor cero en Go ya es `false`, y `not false`
+da `true` -> el chart sigue creando el namespace exactamente como
+antes. Solo values-p8.yaml declara la clave en `true`.
+*/}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "namespace") | nindent 4 }}
+    # Esta etiqueta la usan las NetworkPolicies para identificar el
+    # namespace propio frente a los demas del cluster.
+    sa-platform/namespace: {{ .Values.global.namespace | quote }}
+{{- end }}

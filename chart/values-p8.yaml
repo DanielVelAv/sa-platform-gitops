@@ -1,0 +1,125 @@
+# =====================================================================
+# values-p8.yaml — overlay para la Practica 8 (GitOps).
+#
+# NO reemplaza values.yaml, values-do.yaml, ni values-kind.yaml -- se
+# aplica ENCIMA de values.yaml, igual que los overlays anteriores.
+#
+# Diferencia clave respecto a P7: el namespace, la ResourceQuota y el
+# LimitRange YA NO los crea el chart -- los crea Terraform
+# (P8/terraform/), tal como aclaro el auxiliar en el foro: "el
+# namespace, las quotas, los limit ranges y el RBAC salen del chart y
+# se reescriben como recursos kubernetes_* de Terraform. El chart se
+# queda solo con la aplicacion".
+#
+# Uso local, mientras se desarrolla (antes de que ArgoCD tome el control):
+#   helm template sa-platform ./charts/sa-platform \
+#     -f charts/sa-platform/values.yaml \
+#     -f charts/sa-platform/values-p8.yaml \
+#     -f secretos-p8.yaml \
+#     --set-file secrets.jwtPrivateKey=keys/jwt_private.pem \
+#     --set-file secrets.jwtPublicKey=keys/jwt_public.pem
+#
+# PENDIENTE (se resuelve en pasos posteriores, no en este archivo):
+#   - Registro de imagenes: por ahora sigue apuntando a los repos
+#     locales de kind (igual que values-kind.yaml). Cuando el pipeline
+#     de P8 publique en GHCR con tags semanticos, este bloque de
+#     imagenes se reemplaza por las referencias reales firmadas.
+#   - NetworkPolicy: el AnalysisTemplate va a correr un Job de pruebas
+#     de humo dentro del cluster: hay que confirmar si necesita una
+#     regla explicita de entrada antes de activarlo, o si basta con
+#     que corra en el mismo namespace.
+# =====================================================================
+
+global:
+  namespace: sa-p8-produccion
+  # Namespace/cuota/limites ya NO los crea el chart: los crea Terraform.
+  # OJO: la clave se llama "namespaceGestionadoExternamente", NO
+  # "crearNamespace: false" -- ver el comentario en templates/namespace.yaml
+  # sobre por que `default true` con un booleano es una trampa de Helm.
+  namespaceGestionadoExternamente: true
+  logLevel: info
+  imagePullPolicy: Never
+  security:
+    allowInsecureImages: true
+  hpa:
+    minReplicas: 1
+    maxReplicas: 2
+  resourceQuota:
+    # Sin efecto real (la Quota la crea Terraform), pero se deja
+    # declarada para que el chart no falle si alguna plantilla
+    # antigua todavia la referencia en algun `required`.
+    requestsCpu: "1500m"
+    requestsMemory: 2Gi
+    limitsCpu: "3"
+    limitsMemory: 3Gi
+    pods: "20"
+
+# La ResourceQuota y el LimitRange del chart quedan desactivados por
+# completo: son responsabilidad de Terraform a partir de esta practica.
+resourceQuota:
+  enabled: false
+
+limitRange:
+  enabled: false
+
+# Mismas imagenes locales de kind que en P7, mientras se conecta el
+# pipeline real de P8 (build + Trivy + firma + PR al repo GitOps).
+api-gateway:
+  image:
+    repository: sa-p7/api-gateway
+    tag: ci
+  replicas: 1
+
+ms-auth:
+  image:
+    repository: sa-p7/ms-auth
+    tag: ci
+  replicas: 1
+
+ms-lotes:
+  image:
+    repository: sa-p7/ms-lotes
+    tag: ci
+  replicas: 1
+
+ms-aprobaciones:
+  image:
+    repository: sa-p7/ms-aprobaciones
+    tag: ci
+  replicas: 1
+
+ms-notificaciones:
+  image:
+    repository: sa-p7/ms-notificaciones
+    tag: ci
+  replicas: 1
+
+cronjobs:
+  registro:
+    image:
+      repository: sa-p7/cronjob-registro
+      tag: ci
+  resumen:
+    image:
+      repository: sa-p7/cronjob-resumen
+      tag: ci
+
+ingress:
+  enabled: false
+
+postgresql:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: "17.6.0-debian-12-r4"
+  primary:
+    persistence:
+      size: 500Mi
+
+rabbitmq:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/rabbitmq
+    tag: "4.1.3-debian-12-r1"
+  persistence:
+    size: 500Mi

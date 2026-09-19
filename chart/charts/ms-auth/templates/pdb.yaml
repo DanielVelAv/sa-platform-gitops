@@ -1,0 +1,18 @@
+{{- $pdb := .Values.podDisruptionBudget | default .Values.global.podDisruptionBudget -}}
+{{- if $pdb.enabled -}}
+{{- $ctx := dict "raiz" . "componente" .Values.nombre -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "sa-platform.nombreCompleto" $ctx }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" $ctx | nindent 4 }}
+spec:
+  # Protege ante interrupciones VOLUNTARIAS (drenar un nodo, actualizar
+  # el cluster): Kubernetes no dejara caer mas pods de los permitidos.
+  minAvailable: {{ $pdb.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "sa-platform.etiquetasSelector" $ctx | nindent 6 }}
+{{- end }}

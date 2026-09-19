@@ -1,0 +1,56 @@
+{{/*
+=======================================================================
+ConfigMap con toda la configuracion NO sensible (requisito B).
+
+Las claves usan EXACTAMENTE los nombres de variable que lee el codigo
+de los microservicios (process.env.X en Node, os.environ["X"] en
+Python). Si no coinciden, los pods arrancan sin configuracion y quedan
+en CrashLoopBackOff.
+
+Nada va quemado: todo sale de .Values.global.config.
+=======================================================================
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.global.configMapName | quote }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "config") | nindent 4 }}
+data:
+  # ---------- Generales ----------
+  LOG_LEVEL: {{ .Values.global.config.logLevel | default "info" | quote }}
+  TZ: {{ .Values.global.config.zonaHoraria | default "America/Guatemala" | quote }}
+  NODE_ENV: "production"
+
+  # ---------- JWT (heredado de la Practica 2) ----------
+  JWT_ALGORITHM: {{ .Values.global.config.jwtAlgorithm | default "RS256" | quote }}
+  JWT_TTL_SECONDS: {{ .Values.global.config.jwtTtlSeconds | default 900 | quote }}
+  # Rutas donde se monta el Secret con el par de llaves RSA
+  JWT_PRIVATE_KEY_PATH: "/keys/jwt_private.pem"
+  JWT_PUBLIC_KEY_PATH: "/keys/jwt_public.pem"
+  BCRYPT_COST: {{ .Values.global.config.bcryptCost | default 10 | quote }}
+
+  # ---------- Cookies ----------
+  COOKIE_NAME: "access_token"
+  COOKIE_SECURE: "false"
+  COOKIE_SAMESITE: "lax"
+
+  # ---------- Descubrimiento de servicios ----------
+  # Se generan con `range` a partir de la lista de microservicios: si
+  # manana se agrega uno, no hay que tocar esta plantilla.
+  {{- $raiz := . }}
+  {{- range $servicio := list "ms-auth" "ms-lotes" "ms-aprobaciones" "ms-notificaciones" }}
+  {{- $config := index $raiz.Values $servicio }}
+  {{ printf "%s_URL" (upper (replace "-" "_" $servicio)) }}: {{ printf "http://%s-%s:%v" $raiz.Release.Name $servicio $config.puerto | quote }}
+  {{- end }}
+
+  # ---------- Broker de mensajeria ----------
+  RABBITMQ_HOST: {{ printf "%s-rabbitmq" .Release.Name | quote }}
+  RABBITMQ_PORT: {{ .Values.global.rabbitmqPort | default 5672 | quote }}
+  RABBITMQ_USER: {{ .Values.global.rabbitmqUser | default "sa" | quote }}
+  COLA_LOTES_APROBADOS: {{ .Values.global.config.colaLotesAprobados | default "lotes.aprobados" | quote }}
+  COLA_RESUMEN_CRON: {{ .Values.global.config.colaResumenCron | default "cron.resumen" | quote }}
+
+  # ---------- Datos del estudiante (los usa el Cronjob 1) ----------
+  CARNE_ESTUDIANTE: {{ required "Debe definir global.config.carneEstudiante" .Values.global.config.carneEstudiante | quote }}

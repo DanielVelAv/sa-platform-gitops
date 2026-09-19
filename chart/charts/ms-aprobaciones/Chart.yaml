@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ms-aprobaciones
+description: Subchart del microservicio ms-aprobaciones
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

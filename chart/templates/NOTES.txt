@@ -1,0 +1,23 @@
+Plataforma {{ .Chart.Name }} v{{ .Chart.Version }} (app {{ .Chart.AppVersion }})
+Release: {{ .Release.Name }}   Namespace: {{ .Values.global.namespace }}
+
+Componentes desplegados:
+{{- range $s := list "api-gateway" "ms-auth" "ms-lotes" "ms-aprobaciones" "ms-notificaciones" }}
+{{- $c := index $.Values $s }}
+{{- if $c.enabled }}
+  - {{ $s }} ({{ $c.replicas }} replica(s), puerto {{ $c.puerto }})
+{{- end }}
+{{- end }}
+
+Verificar el despliegue:
+  kubectl get pods -n {{ .Values.global.namespace }}
+  kubectl get hpa  -n {{ .Values.global.namespace }}
+  helm history {{ .Release.Name }} -n {{ .Values.global.namespace }}
+
+Acceder por el Ingress (unica puerta de entrada):
+  echo "$(minikube ip)  {{ .Values.ingress.host }}" | sudo tee -a /etc/hosts
+  curl http://{{ .Values.ingress.host }}/health
+
+{{ if not .Values.secrets.postgresPassword }}
+ADVERTENCIA: no se detectaron credenciales. Use -f con su archivo de secretos.
+{{- end }}

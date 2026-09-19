@@ -1,0 +1,196 @@
+{{- if .Values.networkPolicies.enabled -}}
+{{/*
+=======================================================================
+NetworkPolicies (requisito E).
+
+En Kubernetes el trafico entre pods es PERMITIDO POR DEFECTO: sin
+ninguna policy, cualquier pod puede hablar con cualquier otro. Las
+NetworkPolicies no "bloquean" — SELECCIONAN pods y, en el momento en
+que un pod queda seleccionado por al menos una policy, todo lo que no
+este explicitamente permitido para el queda denegado.
+
+Por eso el orden importa: primero se niega todo (1), y despues se
+abren solo los caminos legitimos (2 a 5).
+=======================================================================
+*/}}
+{{- $ns := .Values.global.namespace -}}
+{{- $release := .Release.Name -}}
+
+# ---------------------------------------------------------------------
+# 1. Denegar todo el trafico de entrada dentro del namespace.
+#    podSelector vacio = aplica a TODOS los pods.
+# ---------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-denegar-todo" $release | quote }}
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "netpol") | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# ---------------------------------------------------------------------
+# 2. Permitir DNS de salida a todos los pods.
+#    Sin esto ningun pod puede resolver nombres de servicio y todo falla
+#    con errores de conexion confusos.
+# ---------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-permitir-dns" $release | quote }}
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "netpol") | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # El resto del trafico de salida hacia el propio namespace queda
+    # permitido; lo que se controla estrictamente es la ENTRADA.
+    - to:
+        - podSelector: {}
+---
+# ---------------------------------------------------------------------
+# 3. El API Gateway acepta trafico solo del Ingress Controller.
+# ---------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-ingress-hacia-gateway" $release | quote }}
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "netpol") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "api-gateway"
+      app.kubernetes.io/instance: {{ $release | quote }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .Values.networkPolicies.permitirEntradaPublica }}
+    # El Service del Gateway es LoadBalancer, no hay Ingress Controller
+    # en el cluster (p.ej. DOKS). El trafico externo llega sin una
+    # identidad de pod/namespace consistente, asi que no hay "from" que
+    # filtrar: se permite cualquier origen unicamente en el puerto del
+    # Gateway. El resto de las policies (4, 5, 6) se mantienen intactas
+    # y siguen bloqueando el trafico lateral entre microservicios.
+    - ports:
+        - protocol: TCP
+          port: {{ (index .Values "api-gateway").puerto }}
+    {{- else }}
+    - from:
+        # El controlador de Ingress vive en otro namespace
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: {{ (index .Values "api-gateway").puerto }}
+    {{- end }}
+---
+# ---------------------------------------------------------------------
+# 4. Los microservicios aceptan trafico UNICAMENTE del API Gateway.
+#    Esto es lo que impide el trafico lateral: si un pod cualquiera
+#    intenta llamar a ms-lotes directamente, la conexion muere.
+#    Se genera con `range` sobre la lista de microservicios.
+# ---------------------------------------------------------------------
+{{- range $servicio := list "ms-auth" "ms-lotes" "ms-aprobaciones" "ms-notificaciones" }}
+{{- $config := index $.Values $servicio }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-gateway-hacia-%s" $release $servicio | quote }}
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" $ "componente" "netpol") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $servicio | quote }}
+      app.kubernetes.io/instance: {{ $release | quote }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "api-gateway"
+              app.kubernetes.io/instance: {{ $release | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $config.puerto }}
+---
+{{- end }}
+# ---------------------------------------------------------------------
+# 5. La base de datos acepta trafico solo de los clientes autorizados.
+#    La lista sale de values.yaml, no esta quemada aqui.
+# ---------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-acceso-postgres" $release | quote }}
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "netpol") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "postgresql"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range .Values.networkPolicies.clientesBaseDatos }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.global.postgresPort | default 5432 }}
+---
+# ---------------------------------------------------------------------
+# 6. El broker acepta trafico solo de quien publica o consume.
+#    ms-auth y ms-lotes NO estan en la lista: no usan mensajeria.
+# ---------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-acceso-rabbitmq" $release | quote }}
+  namespace: {{ $ns | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "netpol") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "rabbitmq"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range .Values.networkPolicies.clientesBroker }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.global.rabbitmqPort | default 5672 }}
+{{- end }}

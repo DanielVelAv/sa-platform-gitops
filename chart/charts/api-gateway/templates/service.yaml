@@ -1,0 +1,20 @@
+{{- $ctx := dict "raiz" . "componente" .Values.nombre -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sa-platform.nombreCompleto" $ctx }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" $ctx | nindent 4 }}
+spec:
+  # ClusterIP en el cluster local (Ingress es la unica entrada, P5).
+  # LoadBalancer en la nube (values-do.yaml): sin Ingress administrado
+  # por defecto, este Service expone la IP publica (P6).
+  type: {{ .Values.service.type | default "ClusterIP" | quote }}
+  ports:
+    - name: http
+      port: {{ .Values.puerto }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "sa-platform.etiquetasSelector" $ctx | nindent 4 }}

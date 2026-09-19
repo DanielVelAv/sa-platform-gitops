@@ -1,0 +1,19 @@
+{{- $ctx := dict "raiz" . "componente" .Values.nombre -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sa-platform.nombreCompleto" $ctx }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" $ctx | nindent 4 }}
+spec:
+  # ClusterIP siempre: el enunciado prohibe NodePort y LoadBalancer.
+  # La unica entrada al cluster es el Ingress del API Gateway.
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.puerto }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "sa-platform.etiquetasSelector" $ctx | nindent 4 }}

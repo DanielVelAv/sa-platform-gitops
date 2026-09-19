@@ -1,0 +1,24 @@
+dependencies:
+- name: api-gateway
+  repository: file://charts/api-gateway
+  version: 1.0.0
+- name: ms-auth
+  repository: file://charts/ms-auth
+  version: 1.0.0
+- name: ms-lotes
+  repository: file://charts/ms-lotes
+  version: 1.0.0
+- name: ms-aprobaciones
+  repository: file://charts/ms-aprobaciones
+  version: 1.0.0
+- name: ms-notificaciones
+  repository: file://charts/ms-notificaciones
+  version: 1.0.0
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 18.8.13
+- name: rabbitmq
+  repository: https://charts.bitnami.com/bitnami
+  version: 16.0.14
+digest: sha256:25c9629ce4588f1b1e8eed763d14398d4b7644eab4f4b58a80654b13a56fe6dd
+generated: "2026-08-29T06:14:34.487835307-06:00"

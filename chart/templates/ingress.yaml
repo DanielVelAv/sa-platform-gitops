@@ -1,0 +1,32 @@
+{{- if .Values.ingress.enabled -}}
+{{/*
+Ingress: UNICA puerta de entrada al cluster (requisito E).
+Todo el trafico externo entra por el API Gateway; los microservicios,
+la base de datos y el broker son ClusterIP y no se exponen.
+*/}}
+{{- $gw := index .Values "api-gateway" -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-ingress" .Release.Name | quote }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "ingress") | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | default "nginx" | quote }}
+  rules:
+    - host: {{ required "Debe definir ingress.host" .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path | default "/" | quote }}
+            pathType: {{ .Values.ingress.pathType | default "Prefix" | quote }}
+            backend:
+              service:
+                name: {{ printf "%s-api-gateway" .Release.Name | quote }}
+                port:
+                  number: {{ $gw.puerto }}
+{{- end }}

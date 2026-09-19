@@ -1,0 +1,28 @@
+# Valores por defecto del subchart ms-notificaciones.
+# El chart padre los sobreescribe desde su propio values.yaml,
+# en la clave "ms-notificaciones". No edite este archivo: edite el del padre.
+enabled: true
+puerto: 3004
+nombre: ms-notificaciones
+image:
+  repository: sa-p5/ms-notificaciones
+  tag: ""
+replicas: 2
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 256Mi }
+probes:
+  startup: { path: /health, periodSeconds: 5, failureThreshold: 12 }
+  readiness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+  liveness: { path: /health, periodSeconds: 20, failureThreshold: 3 }
+extraVolumes: []
+extraVolumeMounts: []
+worker:
+  enabled: true
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 300m, memory: 256Mi }
+-e usaBaseDatos: true
+usaBroker: true
+secretosExtra: []

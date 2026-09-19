@@ -1,0 +1,354 @@
+# =====================================================================
+# values.yaml — configuracion BASE de la plataforma.
+#
+# Los archivos values-dev.yaml y values-prod.yaml sobreescriben solo lo
+# que cambia por ambiente: replicas, limites de recursos, tag de imagen
+# y nivel de log.
+#
+# Las credenciales NO van aqui. Ver values.example.yaml.
+# =====================================================================
+
+global:
+  # El namespace lo crea el propio chart (requisito del enunciado):
+  # no se crea a mano con kubectl.
+  namespace: sa-p5
+  imagePullPolicy: IfNotPresent
+  # Tag por defecto de todas las imagenes propias. Cada ambiente lo pisa.
+  imageTag: "1.0.0"
+
+  # Nombres de los objetos compartidos que genera el chart padre.
+  # Los subcharts los referencian con envFrom.
+  configMapName: sa-platform-config
+  secretName: sa-platform-secrets
+
+  # Servicios internos creados por las dependencias de Bitnami
+  postgresHost: sa-platform-postgresql
+  postgresPort: 5432
+  postgresUser: sa
+  postgresDatabase: sa_p5
+  rabbitmqHost: sa-platform-rabbitmq
+  rabbitmqPort: 5672
+  rabbitmqUser: sa
+
+  # -------------------------------------------------------------------
+  # Contexto de seguridad aplicado a TODOS los contenedores (requisito G)
+  # Vive bajo global porque cada subchart debe poder leerlo.
+  # -------------------------------------------------------------------
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilitiesDrop:
+      - ALL
+
+  # Autoescalado horizontal por defecto (requisito F)
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+
+  # Variables NO sensibles -> ConfigMap generado por el chart padre.
+  # Vive bajo global para que los subcharts puedan calcular el
+  # checksum y reiniciarse cuando cambie.
+  config:
+    logLevel: info
+    jwtTtlSeconds: 900
+    jwtAlgorithm: RS256
+    bcryptCost: 10
+    # Nombre de la cola durable del flujo asincrono
+    colaLotesAprobados: lotes.aprobados
+    colaResumenCron: cron.resumen
+    # Carne del estudiante: lo escribe el Cronjob 1 en la base de datos
+    carneEstudiante: "202200041"
+    zonaHoraria: "America/Guatemala"
+
+  # Presupuesto de interrupcion por defecto (requisito F)
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+
+
+# ---------------------------------------------------------------------
+# Credenciales -> Secret. Estos valores se pasan por --set o -f al
+# instalar; NUNCA se versionan con valores reales.
+# ---------------------------------------------------------------------
+secrets:
+  postgresPassword: ""
+  rabbitmqPassword: ""
+  aesKey: ""
+  blindIndexKey: ""
+  # Par de llaves RSA que firma los JWT. Se inyectan al instalar con
+  # --set-file, nunca se versionan.
+  jwtPrivateKey: ""
+  jwtPublicKey: ""
+
+# ---------------------------------------------------------------------
+# Cuotas del namespace (requisito F)
+# ---------------------------------------------------------------------
+resourceQuota:
+  enabled: true
+  requestsCpu: "4"
+  requestsMemory: 6Gi
+  limitsCpu: "8"
+  limitsMemory: 10Gi
+  pods: "40"
+
+limitRange:
+  enabled: true
+  defaultRequestCpu: 50m
+  defaultRequestMemory: 64Mi
+  defaultLimitCpu: 500m
+  defaultLimitMemory: 512Mi
+
+# ---------------------------------------------------------------------
+# Ingress: unica puerta de entrada al cluster (requisito E)
+# ---------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  host: sa-p5.local
+  path: /
+  pathType: Prefix
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+
+# ---------------------------------------------------------------------
+# NetworkPolicies: impiden el trafico lateral (requisito E)
+# ---------------------------------------------------------------------
+networkPolicies:
+  enabled: true
+  # Solo estos componentes pueden alcanzar la base de datos
+  clientesBaseDatos:
+    - ms-auth
+    - ms-lotes
+    - ms-aprobaciones
+    - ms-notificaciones
+    - cronjob-1
+    - cronjob-2
+  # Solo estos componentes pueden alcanzar el broker
+  clientesBroker:
+    - ms-aprobaciones
+    - ms-notificaciones
+    - cronjob-2
+
+
+
+
+# ---------------------------------------------------------------------
+# Cronjobs encadenados (requisito H)
+# ---------------------------------------------------------------------
+cronjobs:
+  registro:
+    enabled: true
+    # Cada 2 minutos: inserta fecha GMT-6 y carne en la base de datos
+    schedule: "*/2 * * * *"
+    concurrencyPolicy: Forbid
+    backoffLimit: 2
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+    image:
+      repository: sa-p5/cronjob-registro
+  resumen:
+    enabled: true
+    # Cada 10 minutos: agrega los registros y publica el resumen al broker
+    schedule: "*/10 * * * *"
+    concurrencyPolicy: Forbid
+    backoffLimit: 2
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+    image:
+      repository: sa-p5/cronjob-resumen
+
+# =====================================================================
+# Subcharts: un microservicio por subchart.
+# Cada bloque se inyecta al subchart correspondiente.
+# =====================================================================
+
+api-gateway:
+  enabled: true
+  # El Gateway no toca la base de datos ni el broker: solo enruta.
+  usaBaseDatos: false
+  usaBroker: false
+  nombre: api-gateway
+  # Solo monta la llave PUBLICA: puede VERIFICAR tokens pero jamas
+  # emitirlos. Es el mismo argumento de RS256 de la Practica 2.
+  extraVolumes:
+    - name: llave-publica-jwt
+      secret:
+        secretName: sa-platform-secrets
+        items:
+          - key: jwt-public-key
+            path: jwt_public.pem
+  extraVolumeMounts:
+    - name: llave-publica-jwt
+      mountPath: /keys
+      readOnly: true
+  image:
+    repository: sa-p5/api-gateway
+  puerto: 8080
+  replicas: 2
+  # Es la unica puerta de entrada, por eso admite mas carga
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  probes:
+    # startup: da margen al arranque sin que liveness lo mate antes de tiempo
+    startup: { path: /health, periodSeconds: 5, failureThreshold: 12 }
+    # readiness: saca el pod del balanceo si no puede atender
+    readiness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+    # liveness: reinicia el pod solo si quedo colgado de verdad
+    liveness: { path: /health, periodSeconds: 20, failureThreshold: 3 }
+
+ms-auth:
+  enabled: true
+  usaBaseDatos: true
+  usaBroker: false
+  # Unico servicio que cifra datos sensibles (heredado de la Practica 2)
+  secretosExtra:
+    - AES_KEY
+    - BLIND_INDEX_KEY
+  nombre: ms-auth
+  # Unico componente con la llave PRIVADA: es el que firma los tokens.
+  extraVolumes:
+    - name: llaves-jwt
+      secret:
+        secretName: sa-platform-secrets
+        items:
+          - key: jwt-private-key
+            path: jwt_private.pem
+          - key: jwt-public-key
+            path: jwt_public.pem
+  extraVolumeMounts:
+    - name: llaves-jwt
+      mountPath: /keys
+      readOnly: true
+  image:
+    repository: sa-p5/ms-auth
+  puerto: 3001
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 160Mi }
+    limits: { cpu: 500m, memory: 320Mi }
+  probes:
+    # bcrypt y la generacion de llaves RSA hacen el arranque mas lento
+    startup: { path: /health, periodSeconds: 5, failureThreshold: 24 }
+    readiness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+    liveness: { path: /health, periodSeconds: 20, failureThreshold: 3 }
+
+ms-lotes:
+  enabled: true
+  usaBaseDatos: true
+  usaBroker: false
+  nombre: ms-lotes
+  image:
+    repository: sa-p5/ms-lotes
+  puerto: 3002
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  probes:
+    startup: { path: /health, periodSeconds: 5, failureThreshold: 18 }
+    readiness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+    liveness: { path: /health, periodSeconds: 20, failureThreshold: 3 }
+
+ms-aprobaciones:
+  enabled: true
+  # PRODUCTOR: publica LoteAprobado al broker
+  usaBaseDatos: true
+  usaBroker: true
+  nombre: ms-aprobaciones
+  image:
+    repository: sa-p5/ms-aprobaciones
+  puerto: 3003
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 160Mi }
+    limits: { cpu: 500m, memory: 320Mi }
+  probes:
+    startup: { path: /health, periodSeconds: 5, failureThreshold: 18 }
+    readiness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+    liveness: { path: /health, periodSeconds: 20, failureThreshold: 3 }
+
+ms-notificaciones:
+  enabled: true
+  # CONSUMIDOR: procesa los eventos de la cola
+  usaBaseDatos: true
+  usaBroker: true
+  nombre: ms-notificaciones
+  image:
+    repository: sa-p5/ms-notificaciones
+  puerto: 3004
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 160Mi }
+    limits: { cpu: 500m, memory: 320Mi }
+  probes:
+    startup: { path: /health, periodSeconds: 5, failureThreshold: 18 }
+    readiness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+    liveness: { path: /health, periodSeconds: 20, failureThreshold: 3 }
+  # Segundo Deployment con la MISMA imagen, ejecutando el consumidor.
+  # Se separa del API para poder escalarlo a 0 y demostrar que los
+  # mensajes se acumulan en la cola sin perderse (requisito D).
+  worker:
+    enabled: true
+    replicas: 1
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 300m, memory: 256Mi }
+
+# =====================================================================
+# Dependencias externas (Bitnami)
+# =====================================================================
+
+postgresql:
+  enabled: true
+  auth:
+    username: sa
+    database: sa_p5
+    # La contrasena se inyecta desde el Secret que genera este chart
+    existingSecret: sa-platform-secrets
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: postgres-password
+  primary:
+    # Una base de datos INDEPENDIENTE por microservicio.
+    # Se crean al inicializar el StatefulSet, sin pasos manuales.
+    initdb:
+      scripts:
+        01-crear-bases.sql: |
+          CREATE DATABASE auth_db;
+          CREATE DATABASE lotes_db;
+          CREATE DATABASE aprobaciones_db;
+          CREATE DATABASE notificaciones_db;
+          CREATE DATABASE cron_db;
+    # StatefulSet + PVC: los datos sobreviven al borrado del pod (requisito C)
+    persistence:
+      enabled: true
+      size: 2Gi
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 1000m, memory: 512Mi }
+  # No se expone fuera del cluster
+  service:
+    type: ClusterIP
+
+rabbitmq:
+  enabled: true
+  auth:
+    username: sa
+    existingPasswordSecret: sa-platform-secrets
+    existingSecretPasswordKey: rabbitmq-password
+  persistence:
+    enabled: true
+    size: 1Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 768Mi }
+  service:
+    type: ClusterIP

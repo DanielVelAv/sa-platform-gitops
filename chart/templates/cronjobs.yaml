@@ -1,0 +1,113 @@
+{{/*
+=======================================================================
+CronJobs encadenados (requisito H).
+=======================================================================
+*/}}
+{{- $raiz := . -}}
+{{- $g := .Values.global -}}
+{{- range $clave, $cron := .Values.cronjobs }}
+{{- if $cron.enabled }}
+{{- $nombre := printf "cronjob-%s" (ternary "1" "2" (eq $clave "registro")) -}}
+{{- $completo := include "sa-platform.nombreCompleto" (dict "raiz" $raiz "componente" $nombre) -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $completo | quote }}
+  namespace: {{ $g.namespace | quote }}
+  labels:
+    {{ include "sa-platform.etiquetas" (dict "raiz" $raiz "componente" $nombre) | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $completo | quote }}
+  namespace: {{ $g.namespace | quote }}
+  labels:
+    {{ include "sa-platform.etiquetas" (dict "raiz" $raiz "componente" $nombre) | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - {{ $g.configMapName | quote }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $completo | quote }}
+  namespace: {{ $g.namespace | quote }}
+  labels:
+    {{ include "sa-platform.etiquetas" (dict "raiz" $raiz "componente" $nombre) | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $completo | quote }}
+    namespace: {{ $g.namespace | quote }}
+roleRef:
+  kind: Role
+  name: {{ $completo | quote }}
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $completo | quote }}
+  namespace: {{ $g.namespace | quote }}
+  labels:
+    {{ include "sa-platform.etiquetas" (dict "raiz" $raiz "componente" $nombre) | nindent 4 }}
+spec:
+  schedule: {{ required (printf "Debe definir el schedule del cronjob %s" $clave) $cron.schedule | quote }}
+  concurrencyPolicy: {{ $cron.concurrencyPolicy | default "Forbid" | quote }}
+  successfulJobsHistoryLimit: {{ $cron.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ $cron.failedJobsHistoryLimit | default 3 }}
+  startingDeadlineSeconds: 60
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $cron.backoffLimit | default 2 }}
+      template:
+        metadata:
+          labels:
+            {{ include "sa-platform.etiquetasSelector" (dict "raiz" $raiz "componente" $nombre) | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ $completo | quote }}
+          securityContext:
+            runAsNonRoot: {{ $g.securityContext.runAsNonRoot | default true }}
+            fsGroup: {{ $g.securityContext.runAsGroup | default 1000 }}
+          containers:
+            - name: {{ $nombre | quote }}
+              image: {{ printf "%s:%s" (required "Debe definir la imagen del cronjob" $cron.image.repository) ($cron.image.tag | default $g.imageTag) | quote }}
+              imagePullPolicy: {{ $g.imagePullPolicy | default "IfNotPresent" }}
+              envFrom:
+                - configMapRef:
+                    name: {{ $g.configMapName | quote }}
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $g.secretName | quote }}
+                      key: "database-url-cronjobs"
+                {{- if eq $clave "resumen" }}
+                - name: RABBITMQ_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $g.secretName | quote }}
+                      key: "RABBITMQ_URL"
+                {{- end }}
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              securityContext:
+                {{ include "sa-platform.contextoSeguridad" $raiz | nindent 16 }}
+              volumeMounts:
+                - name: tmp-vol
+                  mountPath: /tmp
+          volumes:
+            - name: tmp-vol
+              emptyDir: {}
+{{ end }}
+{{ end }}

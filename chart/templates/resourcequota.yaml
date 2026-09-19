@@ -1,0 +1,21 @@
+{{- if .Values.resourceQuota.enabled -}}
+{{/*
+ResourceQuota acota el consumo TOTAL del namespace (requisito F).
+Sin esto, un HPA mal configurado o una fuga de memoria podrian
+consumir todo el cluster y afectar a otros equipos.
+*/}}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ printf "%s-cuota" .Release.Name | quote }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "cuota") | nindent 4 }}
+spec:
+  hard:
+    requests.cpu: {{ .Values.resourceQuota.requestsCpu | quote }}
+    requests.memory: {{ .Values.resourceQuota.requestsMemory | quote }}
+    limits.cpu: {{ .Values.resourceQuota.limitsCpu | quote }}
+    limits.memory: {{ .Values.resourceQuota.limitsMemory | quote }}
+    pods: {{ .Values.resourceQuota.pods | quote }}
+{{- end }}

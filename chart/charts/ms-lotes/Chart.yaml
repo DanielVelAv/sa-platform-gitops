@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ms-lotes
+description: Subchart del microservicio ms-lotes
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

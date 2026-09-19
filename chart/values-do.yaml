@@ -1,0 +1,161 @@
+# =====================================================================
+# values-do.yaml — configuracion especifica para desplegar en un
+# cluster de Kubernetes administrado en DigitalOcean (DOKS).
+#
+# Se aplica ENCIMA de values.yaml (base) y NO reemplaza values-dev.yaml,
+# que sigue sirviendo para minikube. Uso:
+#
+#   helm upgrade --install sa-platform ./charts/sa-platform \
+#     --namespace sa-p6 \
+#     -f charts/sa-platform/values.yaml \
+#     -f charts/sa-platform/values-do.yaml \
+#     -f secretos.yaml \
+#     --set-file secrets.jwtPrivateKey=keys/jwt_private.pem \
+#     --set-file secrets.jwtPublicKey=keys/jwt_public.pem
+# =====================================================================
+
+global:
+  namespace: sa-p6
+  # OJO: no se define aqui "imageRegistry". Los charts de Bitnami leen
+  # esa clave global y la aplican a TODAS sus imagenes (postgresql,
+  # rabbitmq, os-shell), rompiendo la resolucion porque este registro
+  # de DigitalOcean solo contiene los repos "microservicios" y
+  # "cronjobs" -- no las imagenes de Bitnami. Cada uno de los 7
+  # componentes propios ya lleva su ruta COMPLETA en su propio
+  # image.repository, mas abajo en este archivo.
+  logLevel: info
+  # Bitnami retiro su catalogo publico y marca "bitnamilegacy" como
+  # imagen no reconocida por diseno (es intencional: te avisa que ya
+  # no recibe actualizaciones). Se acepta explicitamente porque no hay
+  # alternativa: el catalogo antiguo (docker.io/bitnami) ya no sirve.
+  security:
+    allowInsecureImages: true
+  # El HPA (autoescalado) es quien realmente controla spec.replicas del
+  # Deployment una vez que existe -- no el valor "replicas:" del chart.
+  # Con minReplicas:2 (default de values.yaml) el HPA reescribe cada
+  # Deployment de vuelta a 2 replicas en cuanto actua, chocando con
+  # Helm ("conflict ... kube-controller-manager ... spec.replicas") y
+  # sin dejar caber los pods en 2 nodos pequenos. Se baja a 1 aqui,
+  # que es la fuente de verdad real -- bajar solo ".replicas" en cada
+  # subchart, mas abajo, no alcanza por si solo.
+  hpa:
+    minReplicas: 1
+    maxReplicas: 3
+  # Los nodos del cluster son mas chicos que en el equipo local:
+  # con 2 nodos s-1vcpu-2gb el total asignable ronda 3600m/4Gi.
+  # Se sube la cuota respecto a values-dev.yaml para que quepan los
+  # requests reales de los 8 componentes sin bloquear el rollout,
+  # tal como paso con minikube.
+  resourceQuota:
+    requestsCpu: "3"
+    requestsMemory: 3Gi
+    limitsCpu: "7"
+    limitsMemory: 6Gi
+    pods: "30"
+
+# ---------------------------------------------------------------------
+# Microservicios propios. El repositorio consolidado "microservicios"
+# guarda las 5 imagenes con un tag distinto por componente.
+# ---------------------------------------------------------------------
+api-gateway:
+  image:
+    repository: registry.digitalocean.com/sa-p6-202200041/microservicios
+    tag: api-gateway-1.0.0
+  service:
+    # No hay Ingress administrado por defecto en DOKS: se expone el
+    # api-gateway directo como LoadBalancer para obtener IP publica.
+    type: LoadBalancer
+  # 2 nodos s-1vcpu-2gb dan ~1880m asignables en total. Con 2 replicas
+  # por cada uno de los 5 microservicios (10 pods) mas postgresql y
+  # rabbitmq, los requests no caben y el scheduler deja todo en
+  # Pending. El enunciado exige minimo 2 NODOS, no 2 replicas por
+  # servicio -- se baja a 1 para que quepa en el cluster real.
+  replicas: 1
+
+ms-auth:
+  image:
+    repository: registry.digitalocean.com/sa-p6-202200041/microservicios
+    tag: ms-auth-1.0.1
+  replicas: 1
+
+ms-lotes:
+  image:
+    repository: registry.digitalocean.com/sa-p6-202200041/microservicios
+    tag: ms-lotes-1.0.0
+  replicas: 1
+
+ms-aprobaciones:
+  image:
+    repository: registry.digitalocean.com/sa-p6-202200041/microservicios
+    tag: ms-aprobaciones-1.0.0
+  replicas: 1
+
+ms-notificaciones:
+  image:
+    repository: registry.digitalocean.com/sa-p6-202200041/microservicios
+    tag: ms-notificaciones-1.0.0
+  replicas: 1
+
+# ---------------------------------------------------------------------
+# Cronjobs. Repositorio consolidado "cronjobs", un tag por job.
+# ---------------------------------------------------------------------
+cronjobs:
+  registro:
+    image:
+      repository: registry.digitalocean.com/sa-p6-202200041/cronjobs
+      tag: registro-1.0.0
+  resumen:
+    image:
+      repository: registry.digitalocean.com/sa-p6-202200041/cronjobs
+      tag: resumen-1.0.0
+
+# ---------------------------------------------------------------------
+# Sin Ingress: DOKS no trae un IngressController por defecto (a
+# diferencia del addon "ingress" de minikube). La entrada publica es
+# el Service LoadBalancer del api-gateway, de arriba.
+# ---------------------------------------------------------------------
+ingress:
+  enabled: false
+
+# ---------------------------------------------------------------------
+# Bitnami retiro su catalogo publico: las imagenes versionadas viven
+# ahora en bitnamilegacy, sin actualizaciones futuras pero funcionales.
+# rabbitmq ya apuntaba ahi (heredado de la P5); se agrega postgresql
+# para que un cluster NUEVO (sin cache local) tambien pueda hacer el
+# pull la primera vez.
+# ---------------------------------------------------------------------
+postgresql:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    # Tag fijo: sin esto el chart cae en ":latest", que no es
+    # reproducible (puede cambiar de contenido entre despliegues sin
+    # aviso). Version real, publicada por Bitnami antes del retiro.
+    tag: "17.6.0-debian-12-r4"
+  primary:
+    persistence:
+      size: 1Gi
+      # StorageClass que ofrece DigitalOcean (requisito 5 del alcance).
+      storageClass: do-block-storage
+
+rabbitmq:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/rabbitmq
+    tag: "4.1.3-debian-12-r1"
+  persistence:
+    storageClass: do-block-storage
+
+# ---------------------------------------------------------------------
+# NetworkPolicies: en minikube el api-gateway solo aceptaba trafico del
+# namespace "ingress-nginx" (el controlador de Ingress). En DOKS no hay
+# tal controlador -- el trafico externo llega directo por el Service
+# LoadBalancer, sin una identidad de pod/namespace que la policy pueda
+# reconocer. Sin este flag, la NetworkPolicy #3 bloquea TODO el trafico
+# hacia el gateway (timeout silencioso, sin mensaje de error), incluso
+# el que llega desde el LoadBalancer real.
+# El resto de las policies (trafico lateral entre microservicios, DB,
+# broker) NO cambian: siguen bloqueando todo lo que no sea el gateway.
+# ---------------------------------------------------------------------
+networkPolicies:
+  permitirEntradaPublica: true

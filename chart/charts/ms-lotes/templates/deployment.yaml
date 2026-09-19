@@ -1,0 +1,61 @@
+{{- $nombre := .Values.nombre -}}
+{{- $ctx := dict "raiz" . "componente" $nombre -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sa-platform.nombreCompleto" $ctx }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas | default 2 }}
+  # maxUnavailable: 0 obliga a que el pod nuevo este Ready ANTES de
+  # retirar el viejo. Es lo que permite actualizar sin caida de servicio.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "sa-platform.etiquetasSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Si cambia el ConfigMap cambia este hash, el pod-template cambia
+        # y Kubernetes reinicia los pods solo (requisito B).
+        checksum/config: {{ toYaml .Values.global.config | sha256sum }}
+      labels:
+        {{- include "sa-platform.etiquetasSelector" $ctx | nindent 8 }}
+    spec:
+      # ServiceAccount dedicado: prohibido usar el 'default' (requisito G)
+      serviceAccountName: {{ include "sa-platform.nombreCompleto" $ctx }}
+      securityContext:
+        runAsNonRoot: {{ .Values.global.securityContext.runAsNonRoot | default true }}
+        fsGroup: {{ .Values.global.securityContext.runAsGroup | default 1000 }}
+      containers:
+        - name: {{ $nombre | quote }}
+          image: {{ include "sa-platform.imagen" . | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.puerto }}
+          envFrom:
+            {{- include "sa-platform.envFromComun" . | nindent 12 }}
+          env:
+            {{- include "sa-platform.envSecretos" . | nindent 12 }}
+          {{- include "sa-platform.probes" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- include "sa-platform.contextoSeguridad" . | nindent 12 }}
+          volumeMounts:
+            {{- include "sa-platform.montajesTemporales" . | nindent 12 }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        {{- include "sa-platform.volumenesTemporales" . | nindent 8 }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

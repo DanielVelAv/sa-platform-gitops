@@ -1,0 +1,68 @@
+# =====================================================================
+# values-prod.yaml — ambiente productivo.
+# Mas replicas, limites amplios, log conciso e imagen versionada fija.
+# =====================================================================
+
+global:
+  # En produccion NUNCA se usa 'latest': el tag es inmutable y trazable.
+  imageTag: "1.1.0"
+  imagePullPolicy: IfNotPresent
+  config:
+    logLevel: warn
+  hpa:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    minAvailable: 2
+
+api-gateway:
+  replicas: 3
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 512Mi }
+
+ms-auth:
+  replicas: 2
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 512Mi }
+
+ms-lotes:
+  replicas: 3
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 512Mi }
+
+ms-aprobaciones:
+  replicas: 2
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 512Mi }
+
+ms-notificaciones:
+  replicas: 2
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 512Mi }
+  worker:
+    replicas: 2
+
+resourceQuota:
+  requestsCpu: "8"
+  requestsMemory: 12Gi
+  limitsCpu: "16"
+  limitsMemory: 20Gi
+  pods: "60"
+
+postgresql:
+  primary:
+    persistence:
+      size: 10Gi
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: 2000m, memory: 1Gi }
+
+rabbitmq:
+  persistence:
+    size: 5Gi

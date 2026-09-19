@@ -1,0 +1,24 @@
+{{- if .Values.limitRange.enabled -}}
+{{/*
+LimitRange pone valores por defecto a los contenedores que no declaran
+recursos (requisito F). Es lo que evita que un pod sin limits entre al
+namespace y rompa la ResourceQuota: con una quota activa, Kubernetes
+RECHAZA los pods sin requests/limits, y el LimitRange se los asigna.
+*/}}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ printf "%s-limites" .Release.Name | quote }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" (dict "raiz" . "componente" "limites") | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: {{ .Values.limitRange.defaultRequestCpu | quote }}
+        memory: {{ .Values.limitRange.defaultRequestMemory | quote }}
+      default:
+        cpu: {{ .Values.limitRange.defaultLimitCpu | quote }}
+        memory: {{ .Values.limitRange.defaultLimitMemory | quote }}
+{{- end }}

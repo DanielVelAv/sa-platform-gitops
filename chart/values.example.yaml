@@ -1,0 +1,27 @@
+# =====================================================================
+# values.example.yaml — PLANTILLA de credenciales.
+#
+# Este archivo SI se versiona, pero solo con valores ficticios.
+# Copielo a un archivo local (por ejemplo secretos.yaml), reemplace los
+# valores y NO lo suba al repositorio: esta en .gitignore.
+#
+#   cp values.example.yaml secretos.yaml
+#   # generar llaves de 32 bytes:
+#   openssl rand -base64 32
+#
+#   helm upgrade --install sa-platform ./charts/sa-platform \
+#     -f charts/sa-platform/values-dev.yaml -f secretos.yaml
+# =====================================================================
+
+secrets:
+  # Contrasena del usuario de PostgreSQL
+  postgresPassword: "CAMBIAR-contrasena-postgres"
+
+  # Contrasena del usuario de RabbitMQ
+  rabbitmqPassword: "CAMBIAR-contrasena-rabbitmq"
+
+  # Llave de cifrado AES-256 (32 bytes en base64) — heredada de la Practica 2
+  aesKey: "Q0FNQklBUi1lc3RhLWxsYXZlLXBvci11bmEtcmVhbC0wMDE="
+
+  # Llave del indice ciego (32 bytes en base64). DEBE ser distinta de aesKey.
+  blindIndexKey: "Q0FNQklBUi1lc3RhLWxsYXZlLXBvci11bmEtcmVhbC0wMDI="

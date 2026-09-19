@@ -1,0 +1,32 @@
+{{- $hpa := .Values.hpa | default .Values.global.hpa -}}
+{{- if $hpa.enabled -}}
+{{- $ctx := dict "raiz" . "componente" .Values.nombre -}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "sa-platform.nombreCompleto" $ctx }}
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "sa-platform.nombreCompleto" $ctx }}
+  minReplicas: {{ $hpa.minReplicas | default 2 }}
+  maxReplicas: {{ $hpa.maxReplicas | default 5 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $hpa.targetCPUUtilizationPercentage | default 70 }}
+  behavior:
+    scaleUp:
+      # Reacciona rapido a la carga
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      # Baja despacio para no oscilar cuando la carga es intermitente
+      stabilizationWindowSeconds: 120
+{{- end }}
