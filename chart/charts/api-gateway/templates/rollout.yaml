@@ -27,6 +27,12 @@ spec:
       {{- include "sa-platform.etiquetasSelector" $ctx | nindent 6 }}
   strategy:
     canary:
+      # Argo Rollouts reescribe automaticamente el selector de este
+      # Service en cada paso, para que apunte SOLO a los pods del
+      # canario -- sin necesitar Istio ni ningun service mesh. Asi el
+      # AnalysisTemplate mide unicamente la version candidata, no una
+      # mezcla con el estable.
+      canaryService: {{ include "sa-platform.nombreCompleto" $ctx }}-canary
       # 3 pasos de setWeight (requisito: al menos 3), con un analisis
       # inline entre el primer y el segundo paso -- si el analisis
       # falla, Argo Rollouts revierte automaticamente sin avanzar mas.
@@ -65,6 +71,7 @@ spec:
             {{- include "sa-platform.envSecretos" . | nindent 12 }}
             - name: SIMULAR_FALLO
               value: {{ .Values.simularFallo | default "false" | quote }}
+          {{- include "sa-platform.probes" . | nindent 10 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:

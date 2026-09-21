@@ -1,0 +1,28 @@
+{{- $ctx := dict "raiz" . "componente" .Values.nombre -}}
+{{/*
+Service EXCLUSIVO del pod canary, usado solo por el AnalysisTemplate.
+Argo Rollouts inyecta automaticamente la etiqueta
+"rollouts-pod-template-hash" con el hash del ReplicaSet activo en cada
+paso -- Kubernetes actualiza el selector de ESTE Service via una
+anotacion especial que Argo Rollouts gestiona (rollouts.argoproj.io
+patchea el selector real). Sin este Service dedicado, el analisis
+consultaria el Service normal, que reparte trafico entre el pod
+estable y el canario por igual, diluyendo cualquier fallo real del
+canario entre las mediciones.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sa-platform.nombreCompleto" $ctx }}-canary
+  namespace: {{ .Values.global.namespace | quote }}
+  labels:
+    {{- include "sa-platform.etiquetas" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.puerto }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "sa-platform.etiquetasSelector" $ctx | nindent 4 }}

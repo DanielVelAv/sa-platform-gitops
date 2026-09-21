@@ -32,6 +32,6 @@ spec:
       failureLimit: 2
       provider:
         web:
-          url: "http://{{ include "sa-platform.nombreCompleto" $ctx }}.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.puerto }}/health"
+          url: "http://{{ include "sa-platform.nombreCompleto" $ctx }}-canary.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.puerto }}/health"
           timeoutSeconds: 5
           jsonPath: "{$.estado}"

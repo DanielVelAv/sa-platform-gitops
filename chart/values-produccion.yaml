@@ -69,6 +69,7 @@ api-gateway:
     repository: sa-p7/api-gateway
     tag: v1-estable
   replicas: 1
+  simularFallo: "true"
 
 ms-auth:
   hpa:
@@ -137,4 +138,3 @@ rabbitmq:
 networkPolicies:
   enabled: false
 
-simularFallo: "true"
