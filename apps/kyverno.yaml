@@ -28,6 +28,15 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
+  # El chart declara labels: {} y annotations: {} vacios en sus CRDs;
+  # con Server-Side Apply Kubernetes no guarda mapas vacios y ArgoCD veria
+  # una diferencia perpetua (OutOfSync falso). Se ignoran solo esos campos.
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /metadata/labels
+        - /metadata/annotations
   syncPolicy:
     automated: { prune: true, selfHeal: true }
-    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+    syncOptions: [CreateNamespace=true, ServerSideApply=true, RespectIgnoreDifferences=true]
