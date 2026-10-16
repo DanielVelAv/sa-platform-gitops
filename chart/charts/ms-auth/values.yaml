@@ -17,7 +17,7 @@ probes:
   liveness: { path: /health, periodSeconds: 20, failureThreshold: 3 }
 extraVolumes: []
 extraVolumeMounts: []
--e usaBaseDatos: true
+usaBaseDatos: true
 usaBroker: false
 secretosExtra:
   - AES_KEY

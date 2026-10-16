@@ -1,0 +1,119 @@
+# =====================================================================
+# values-p9.yaml — overlay para la Practica 9 (continuidad operativa).
+# Se aplica ENCIMA de values.yaml, igual que values-p8.yaml.
+#
+# Diferencias respecto a P8:
+#   - Namespace sa-p9-produccion (creado por Terraform, P9/terraform).
+#   - Imagenes en GHCR con tag inmutable: el cluster reconstruido las
+#     descarga de un registro externo (antes: kind load, se perdian).
+#   - Secretos fuera del chart: los aporta el SealedSecret de secretos/
+#     (secrets.gestionExterna). Nada sensible en la Application.
+#   - Resiliencia ante perdida de nodo: 2 replicas + anti-afinidad + PDB.
+#   - PostgreSQL en la StorageClass local-velero (PV tipo local, que
+#     Velero File System Backup si respalda).
+#   - Solo los servicios del flujo de P8 (gateway + ms-auth); el resto
+#     queda deshabilitado para caber en un cluster kind de laptop.
+# =====================================================================
+
+global:
+  namespace: sa-p9-produccion
+  namespaceGestionadoExternamente: true
+  imagePullPolicy: IfNotPresent
+  security:
+    allowInsecureImages: true
+
+secrets:
+  gestionExterna: true
+
+resourceQuota:
+  enabled: false
+
+limitRange:
+  enabled: false
+
+ingress:
+  enabled: false
+
+networkPolicies:
+  enabled: false
+
+# ---------------------------------------------------------------------
+# api-gateway (Rollout canary de P8)
+# ---------------------------------------------------------------------
+api-gateway:
+  image:
+    repository: ghcr.io/danielvelav/sa-p9/api-gateway
+    tag: v1.0.0
+  replicas: 2
+  simularFallo: "false"
+  hpa:
+    enabled: false
+  # PREFERIDA y no requerida: durante el canary existe un pod extra; con
+  # anti-afinidad requerida y solo 2 workers ese pod no cabria y el
+  # Rollout quedaria atascado.
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: api-gateway
+
+# ---------------------------------------------------------------------
+# ms-auth (servicio con estado: auth_db en PostgreSQL)
+# ---------------------------------------------------------------------
+ms-auth:
+  image:
+    repository: ghcr.io/danielvelav/sa-p9/ms-auth
+    tag: v1.0.0
+  replicas: 2
+  hpa:
+    enabled: false
+  # REQUERIDA: 2 replicas -> 2 workers. Nunca dos copias en el mismo nodo.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: ms-auth
+
+ms-lotes:
+  enabled: false
+
+ms-aprobaciones:
+  enabled: false
+
+ms-notificaciones:
+  enabled: false
+
+cronjobs:
+  registro:
+    enabled: false
+  resumen:
+    enabled: false
+
+rabbitmq:
+  enabled: false
+
+# ---------------------------------------------------------------------
+# PostgreSQL: unica pieza con datos irrecuperables. Respaldada por el
+# Schedule de Velero (velero/schedule.yaml). Una sola replica: es un
+# punto unico de fallo declarado en el informe de DR.
+# ---------------------------------------------------------------------
+postgresql:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: "17.6.0-debian-12-r4"
+  primary:
+    persistence:
+      storageClass: local-velero
+      size: 1Gi
+      # Sin esta etiqueta el PVC queda fuera de la restauracion selectiva
+      # (velero restore --selector app.kubernetes.io/name=postgresql) y
+      # se restauraria el StatefulSet sin sus datos.
+      labels:
+        app.kubernetes.io/name: postgresql

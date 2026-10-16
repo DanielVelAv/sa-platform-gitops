@@ -1,0 +1,33 @@
+# Politica de admision (Enforce): todo contenedor declara requests y
+# limits de memoria y CPU. Sin limites, un pod puede agotar el nodo y
+# provocar desalojos en cascada (la ResourceQuota de Terraform tambien
+# lo exige; esta politica da un mensaje claro en el momento de admitir).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: requerir-requests-limits
+  annotations:
+    policies.kyverno.io/title: Requerir requests y limits
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: validar-recursos
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["sa-p9-*"]
+      validate:
+        message: "Todo contenedor debe declarar resources.requests y resources.limits (cpu y memory)."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    memory: "?*"
+                    cpu: "?*"
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"

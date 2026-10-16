@@ -33,6 +33,12 @@ spec:
       securityContext:
         runAsNonRoot: {{ .Values.global.securityContext.runAsNonRoot | default true }}
         fsGroup: {{ .Values.global.securityContext.runAsGroup | default 1000 }}
+      {{- with .Values.affinity }}
+      # P9: anti-afinidad para que las replicas queden en nodos distintos
+      # y el servicio sobreviva al drenaje de un nodo.
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ $nombre | quote }}
           image: {{ include "sa-platform.imagen" . | quote }}

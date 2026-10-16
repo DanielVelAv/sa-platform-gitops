@@ -23,6 +23,6 @@ worker:
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits: { cpu: 300m, memory: 256Mi }
--e usaBaseDatos: true
+usaBaseDatos: true
 usaBroker: true
 secretosExtra: []

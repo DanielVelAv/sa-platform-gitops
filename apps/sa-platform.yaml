@@ -1,0 +1,29 @@
+# Wave 1: la aplicacion (chart de P5/P8). Llega cuando ya existen los
+# CRDs de Rollouts, las politicas, el Secret descifrado y el Schedule.
+# Si Terraform restauro PostgreSQL, ArgoCD adopta ese StatefulSet y su
+# PVC (mismas etiquetas) en vez de crear una base vacia.
+# Sin helm.values con secretos: todo lo sensible viene de secretos/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sa-platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/DanielVelAv/sa-platform-gitops.git
+    targetRevision: main
+    path: chart
+    helm:
+      releaseName: sa-platform
+      valueFiles:
+        - values-p9.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sa-p9-produccion
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

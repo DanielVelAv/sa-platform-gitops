@@ -1,0 +1,27 @@
+# Politica de auditoria (Audit): los workloads deben llevar la etiqueta
+# app.kubernetes.io/name, que usan los PDB, la anti-afinidad y la
+# restauracion selectiva de Velero. Audit (no Enforce) para no bloquear
+# pods de charts de terceros que usen otra convencion.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: requerir-etiqueta-nombre
+  annotations:
+    policies.kyverno.io/title: Requerir app.kubernetes.io/name
+    policies.kyverno.io/severity: low
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: etiqueta-nombre
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["sa-p9-*"]
+      validate:
+        message: "El pod debe tener la etiqueta app.kubernetes.io/name."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"

@@ -1,0 +1,28 @@
+# Politica de admision (Enforce): ninguna imagen sin tag o con :latest
+# en los namespaces de la plataforma. Un tag mutable rompe la
+# reconstruccion reproducible: tras un desastre se descargaria OTRA imagen.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: prohibir-tag-latest
+  annotations:
+    policies.kyverno.io/title: Prohibir el tag latest
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: requerir-tag-inmutable
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["sa-p9-*"]
+      validate:
+        message: "Imagen con tag ':latest' o sin tag. Use un tag inmutable (v1.0.0, sha)."
+        pattern:
+          spec:
+            =(initContainers):
+              - image: "*:*&!*:latest"
+            containers:
+              - image: "*:*&!*:latest"

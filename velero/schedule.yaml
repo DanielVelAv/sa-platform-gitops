@@ -1,0 +1,45 @@
+# Respaldo programado del entorno de produccion.
+#   - Calendario: cada hora en punto (RPO declarado <= 60 min).
+#   - Retencion: 7 dias (ttl 168h) -> hasta 168 puntos de restauracion.
+#   - Volumenes: File System Backup (kopia) de TODOS los volumenes de los
+#     pods, incluido el PVC de PostgreSQL (StorageClass local-velero).
+#   - Destino: BackupStorageLocation "default" = Cloudflare R2, fuera del
+#     cluster (configurada por Terraform, P9/terraform/velero.tf).
+#   - Secrets excluidos: en el bucket quedarian en texto plano; se
+#     regeneran desde el SealedSecret del repo.
+#   - Hook CHECKPOINT: fuerza a PostgreSQL a escribir a disco antes de
+#     copiar el volumen (respaldo de archivos en caliente mas consistente).
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: sa-p9-horario
+  namespace: velero
+spec:
+  schedule: "0 * * * *"
+  useOwnerReferencesInBackup: false
+  template:
+    ttl: 168h0m0s
+    storageLocation: default
+    includedNamespaces:
+      - sa-p9-produccion
+    excludedResources:
+      - secrets
+    defaultVolumesToFsBackup: true
+    snapshotVolumes: false
+    hooks:
+      resources:
+        - name: postgres-checkpoint
+          includedNamespaces:
+            - sa-p9-produccion
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+          pre:
+            - exec:
+                container: postgresql
+                command:
+                  - /bin/bash
+                  - -c
+                  - PGPASSWORD="$(cat "$POSTGRES_POSTGRES_PASSWORD_FILE")" psql -U postgres -c CHECKPOINT
+                onError: Continue
+                timeout: 60s
