@@ -17,6 +17,19 @@ spec:
     targetRevision: 3.9.1
     helm:
       valuesObject:
+        # El webhook de admision solo intercepta los namespaces de la
+        # plataforma (las politicas solo aplican ahi). Con el valor por
+        # defecto (todo menos kube-system) y failurePolicy Fail, mientras
+        # Kyverno arranca rechaza CUALQUIER pod del cluster: en un ensayo de
+        # reconstruccion bloqueo los pods de Velero que restauran el volumen
+        # de PostgreSQL y la restauracion fallo.
+        config:
+          webhooks:
+            namespaceSelector:
+              matchExpressions:
+                - key: kubernetes.io/metadata.name
+                  operator: In
+                  values: [sa-p9-produccion, sa-p9-staging]
         admissionController:
           replicas: 1
         backgroundController:
