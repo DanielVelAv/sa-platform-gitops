@@ -14,8 +14,12 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
+      {{- with .Values.rollingUpdate }}
+      {{- toYaml . | nindent 6 }}
+      {{- else }}
       maxUnavailable: 0
       maxSurge: 1
+      {{- end }}
   selector:
     matchLabels:
       {{- include "sa-platform.etiquetasSelector" $ctx | nindent 6 }}

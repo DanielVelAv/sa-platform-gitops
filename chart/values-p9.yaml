@@ -71,6 +71,12 @@ ms-auth:
   replicas: 2
   hpa:
     enabled: false
+  # Con anti-afinidad REQUERIDA y 2 workers no cabe un pod extra (surge):
+  # se retira primero un pod viejo y el nuevo ocupa su nodo. La otra
+  # replica (y el PDB) mantienen el servicio durante la actualizacion.
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
   # REQUERIDA: 2 replicas -> 2 workers. Nunca dos copias en el mismo nodo.
   affinity:
     podAntiAffinity:
