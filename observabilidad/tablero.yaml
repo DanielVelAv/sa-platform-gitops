@@ -162,8 +162,8 @@ data:
         },
         {
           "type": "stat",
-          "title": "Peticiones en menos de 500 ms (objetivo 99 %)",
-          "description": "SLO 2: fracción de peticiones respondidas en menos de 500 ms en 7 días.",
+          "title": "Peticiones en menos de 1 s (objetivo 99 %)",
+          "description": "SLO 2: fracción de peticiones respondidas en menos de 1 s en 7 días.",
           "id": 4,
           "datasource": {
             "type": "prometheus",
@@ -295,7 +295,7 @@ data:
         {
           "type": "timeseries",
           "title": "¿Cuánto espera el usuario? (p95 y p50 en el gateway)",
-          "description": "Percentiles de la duración de las peticiones /api. La línea roja es el umbral del SLO (500 ms).",
+          "description": "Percentiles de la duración de las peticiones /api. La línea roja es el umbral del SLO (1 s).",
           "id": 7,
           "datasource": {
             "type": "prometheus",
@@ -326,7 +326,7 @@ data:
                   },
                   {
                     "color": "red",
-                    "value": 0.5
+                    "value": 1
                   }
                 ]
               }

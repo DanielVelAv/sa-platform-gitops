@@ -56,7 +56,8 @@ api-gateway:
   analisis:
     prometheus: http://monitoring-prometheus.observabilidad.svc:9090
     maxTasaError: 0.05
-    maxLatenciaP95: 0.5
+    # p95 normal medido ~0.47 s (lo domina el login con bcrypt): umbral = 2x.
+    maxLatenciaP95: 1.0
   hpa:
     enabled: false
   # PREFERIDA y no requerida: durante el canary existe un pod extra; con

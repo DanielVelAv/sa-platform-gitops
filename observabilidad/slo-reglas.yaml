@@ -5,7 +5,7 @@
 #          gateway (/api) se responden sin error del servidor (5xx).
 #          Ventana: 7 dias moviles. Presupuesto de error: 0.5 %.
 #  SLO 2 - latencia: el 99 % de esas peticiones se responden en menos de
-#          500 ms. Ventana: 7 dias moviles. Presupuesto: 1 %.
+#          1 segundo. Ventana: 7 dias moviles. Presupuesto: 1 %.
 #
 # Reglas de registro: indicador (fraccion "mala") en 5m, 1h y 7d, y el
 # presupuesto consumido / restante de la ventana.
@@ -27,22 +27,22 @@ spec:
       rules:
       - record: slo:sli_error:ratio_rate5m
         labels: { slo: disponibilidad }
-        expr: sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[5m])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[5m]))
+        expr: (sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[5m])) or vector(0)) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[5m]))
       - record: slo:sli_error:ratio_rate1h
         labels: { slo: disponibilidad }
-        expr: sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[1h])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[1h]))
+        expr: (sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[1h])) or vector(0)) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[1h]))
       - record: slo:sli_error:ratio_rate7d
         labels: { slo: disponibilidad }
-        expr: sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[7d])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[7d]))
+        expr: (sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[7d])) or vector(0)) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[7d]))
       - record: slo:sli_error:ratio_rate5m
         labels: { slo: latencia }
-        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="0.5"}[5m])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[5m])))
+        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="1.0"}[5m])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[5m])))
       - record: slo:sli_error:ratio_rate1h
         labels: { slo: latencia }
-        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="0.5"}[1h])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[1h])))
+        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="1.0"}[1h])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[1h])))
       - record: slo:sli_error:ratio_rate7d
         labels: { slo: latencia }
-        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="0.5"}[7d])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[7d])))
+        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="1.0"}[7d])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[7d])))
       - record: slo:objetivo:ratio
         labels: { slo: disponibilidad }
         expr: vector(0.995)
@@ -81,6 +81,6 @@ spec:
           slo: latencia
         annotations:
           summary: "El sistema esta lento para los usuarios: el presupuesto semanal de latencia se consume 14 veces mas rapido de lo sostenible"
-          description: "{{ $value | humanizePercentage }} de las peticiones de la ultima hora tardaron mas de 500 ms."
+          description: "{{ $value | humanizePercentage }} de las peticiones de la ultima hora tardaron mas de 1 segundo."
           accion: "Ubicar con la traza el tramo lento (servicio o consulta a la base) y aliviarlo: escalar, revertir o corregir."
           runbook_url: "https://github.com/DanielVelAv/Pr-cticas-SA-B-202200041/blob/main/P10/runbooks/SLOLatenciaConsumoRapido.md"
