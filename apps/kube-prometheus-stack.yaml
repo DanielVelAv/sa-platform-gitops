@@ -58,6 +58,9 @@ spec:
             requests: { cpu: 10m, memory: 32Mi }
             limits: { memory: 128Mi }
         grafana:
+          # Solo el tablero propio (4 senales de oro); los de fabrica son
+          # ruido para esta operacion y pesan ~350 KB en ConfigMaps.
+          defaultDashboardsEnabled: false
           adminPassword: admin
           # Acceso local (port-forward) sin login para la demostracion.
           grafana.ini:

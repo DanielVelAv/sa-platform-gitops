@@ -52,8 +52,16 @@ spec:
                   podTemplateHashValue: Latest
         - setWeight: 50
         - pause:
-            duration: 20s
-        - setWeight: 100
+            duration: 30s
+        # Segunda verificacion con la mitad del trafico real; al terminar
+        # los pasos, Argo Rollouts promueve al 100 %.
+        - analysis:
+            templates:
+              - templateName: api-gateway-metricas-canary
+            args:
+              - name: canary-hash
+                valueFrom:
+                  podTemplateHashValue: Latest
   template:
     metadata:
       annotations:
