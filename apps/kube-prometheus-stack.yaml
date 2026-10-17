@@ -64,9 +64,10 @@ spec:
             auth.anonymous:
               enabled: true
               org_role: Admin
+          # Grafana 13 supera 384Mi al dibujar el tablero (OOMKilled en pruebas).
           resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { memory: 384Mi }
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 768Mi }
           sidecar:
             dashboards:
               enabled: true

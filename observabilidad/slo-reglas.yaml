@@ -10,7 +10,8 @@
 # Reglas de registro: indicador (fraccion "mala") en 5m, 1h y 7d, y el
 # presupuesto consumido / restante de la ventana.
 # Alertas: por CONSUMO del presupuesto (multi-ventana, tasa de quemado
-# 14.4x = 2 % del presupuesto semanal en 1 h), no por umbral instantaneo.
+# 14.4x: el presupuesto de 7 dias se agotaria en ~11.7 h), no por umbral
+# instantaneo.
 # Solo se definen alertas que exigen que alguien actue; las reglas por
 # defecto de kube-prometheus-stack estan desactivadas porque nadie las
 # atenderia (ruido).
