@@ -1,0 +1,62 @@
+# Trafico de usuarios simulado y constante (~3 peticiones/s) hacia el
+# gateway: inicia sesion, consulta y carga lotes de pagos y, de vez en
+# cuando, se equivoca de contrasena. Sin trafico real no hay metricas con
+# que decidir el canary ni medir los SLO.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: generador-trafico
+  namespace: sa-p9-produccion
+data:
+  generar.sh: |
+    GW=http://sa-platform-api-gateway:8080
+    LOTE='{"nombreArchivo":"carga.csv","transacciones":[{"cuentaOrigen":"1000000001","cuentaDestino":"2000000002","monto":150.5,"beneficiarioNombre":"Ana Lopez","beneficiarioEmail":"ana@example.com"}]}'
+    i=0
+    while true; do
+      i=$((i+1))
+      T=$(curl -s -m 5 -X POST $GW/api/auth/login -H 'Content-Type: application/json' \
+          -d '{"correo":"cliente@usac.edu.gt","password":"Cliente.12345"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+      curl -s -o /dev/null -m 5 -H "Authorization: Bearer $T" $GW/api/lotes
+      curl -s -o /dev/null -m 5 -H "Authorization: Bearer $T" $GW/api/lotes/1
+      [ $((i % 5)) -eq 0 ] && curl -s -o /dev/null -m 5 -X POST -H "Authorization: Bearer $T" \
+          -H 'Content-Type: application/json' -d "$LOTE" $GW/api/lotes
+      [ $((i % 10)) -eq 0 ] && curl -s -o /dev/null -m 5 -X POST $GW/api/auth/login \
+          -H 'Content-Type: application/json' -d '{"correo":"cliente@usac.edu.gt","password":"incorrecta"}'
+      sleep 1
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: generador-trafico
+  namespace: sa-p9-produccion
+  labels:
+    app.kubernetes.io/name: generador-trafico
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: generador-trafico
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: generador-trafico
+    spec:
+      containers:
+        - name: generador
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "/script/generar.sh"]
+          resources:
+            requests: { cpu: 20m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: script
+              mountPath: /script
+      volumes:
+        - name: script
+          configMap:
+            name: generador-trafico

@@ -1,0 +1,86 @@
+# =====================================================================
+# SLO de la Practica 10 (ver P10/SLO.md para la justificacion).
+#
+#  SLO 1 - disponibilidad: el 99.5 % de las peticiones de usuarios al
+#          gateway (/api) se responden sin error del servidor (5xx).
+#          Ventana: 7 dias moviles. Presupuesto de error: 0.5 %.
+#  SLO 2 - latencia: el 99 % de esas peticiones se responden en menos de
+#          500 ms. Ventana: 7 dias moviles. Presupuesto: 1 %.
+#
+# Reglas de registro: indicador (fraccion "mala") en 5m, 1h y 7d, y el
+# presupuesto consumido / restante de la ventana.
+# Alertas: por CONSUMO del presupuesto (multi-ventana, tasa de quemado
+# 14.4x = 2 % del presupuesto semanal en 1 h), no por umbral instantaneo.
+# Solo se definen alertas que exigen que alguien actue; las reglas por
+# defecto de kube-prometheus-stack estan desactivadas porque nadie las
+# atenderia (ruido).
+# =====================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: slo-sa-platform
+  namespace: observabilidad
+spec:
+  groups:
+    - name: slo-indicadores
+      interval: 30s
+      rules:
+      - record: slo:sli_error:ratio_rate5m
+        labels: { slo: disponibilidad }
+        expr: sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[5m])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[5m]))
+      - record: slo:sli_error:ratio_rate1h
+        labels: { slo: disponibilidad }
+        expr: sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[1h])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[1h]))
+      - record: slo:sli_error:ratio_rate7d
+        labels: { slo: disponibilidad }
+        expr: sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", http_response_status_code=~"5.."}[7d])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[7d]))
+      - record: slo:sli_error:ratio_rate5m
+        labels: { slo: latencia }
+        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="0.5"}[5m])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[5m])))
+      - record: slo:sli_error:ratio_rate1h
+        labels: { slo: latencia }
+        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="0.5"}[1h])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[1h])))
+      - record: slo:sli_error:ratio_rate7d
+        labels: { slo: latencia }
+        expr: 1 - (sum(rate(http_server_request_duration_bucket{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*", le="0.5"}[7d])) / sum(rate(http_server_request_duration_count{namespace="sa-p9-produccion", servicio="api-gateway", http_route=~"/api.*"}[7d])))
+      - record: slo:objetivo:ratio
+        labels: { slo: disponibilidad }
+        expr: vector(0.995)
+      - record: slo:objetivo:ratio
+        labels: { slo: latencia }
+        expr: vector(0.99)
+      # Presupuesto consumido en la ventana de 7 dias (1 = agotado).
+      - record: slo:presupuesto_consumido:ratio
+        expr: slo:sli_error:ratio_rate7d / on(slo) (1 - slo:objetivo:ratio)
+      - record: slo:presupuesto_restante:ratio
+        expr: 1 - slo:presupuesto_consumido:ratio
+    - name: slo-alertas
+      rules:
+      - alert: SLODisponibilidadConsumoRapido
+        expr: |
+          slo:sli_error:ratio_rate1h{slo="disponibilidad"} > (14.4 * 0.005)
+          and
+          slo:sli_error:ratio_rate5m{slo="disponibilidad"} > (14.4 * 0.005)
+        for: 1m
+        labels:
+          severity: page
+          slo: disponibilidad
+        annotations:
+          summary: "Los usuarios estan recibiendo errores: el presupuesto semanal de disponibilidad se consume 14 veces mas rapido de lo sostenible"
+          description: "{{ $value | humanizePercentage }} de las peticiones de la ultima hora fallaron (5xx). A este ritmo el presupuesto de 7 dias se agota en menos de 12 horas."
+          accion: "Identificar el servicio y la causa con la traza del error y revertir o corregir el ultimo cambio."
+          runbook_url: "https://github.com/DanielVelAv/Pr-cticas-SA-B-202200041/blob/main/P10/runbooks/SLODisponibilidadConsumoRapido.md"
+      - alert: SLOLatenciaConsumoRapido
+        expr: |
+          slo:sli_error:ratio_rate1h{slo="latencia"} > (14.4 * 0.01)
+          and
+          slo:sli_error:ratio_rate5m{slo="latencia"} > (14.4 * 0.01)
+        for: 1m
+        labels:
+          severity: page
+          slo: latencia
+        annotations:
+          summary: "El sistema esta lento para los usuarios: el presupuesto semanal de latencia se consume 14 veces mas rapido de lo sostenible"
+          description: "{{ $value | humanizePercentage }} de las peticiones de la ultima hora tardaron mas de 500 ms."
+          accion: "Ubicar con la traza el tramo lento (servicio o consulta a la base) y aliviarlo: escalar, revertir o corregir."
+          runbook_url: "https://github.com/DanielVelAv/Pr-cticas-SA-B-202200041/blob/main/P10/runbooks/SLOLatenciaConsumoRapido.md"

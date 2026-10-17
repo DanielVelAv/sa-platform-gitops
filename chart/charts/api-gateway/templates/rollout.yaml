@@ -36,13 +36,20 @@ spec:
       # 3 pasos de setWeight (requisito: al menos 3), con un analisis
       # inline entre el primer y el segundo paso -- si el analisis
       # falla, Argo Rollouts revierte automaticamente sin avanzar mas.
+      # P10: el analisis consulta Prometheus (tasa de error y p95 del
+      # canary) en lugar de una prueba sintetica. La pausa previa deja que
+      # el canary reciba trafico real del generador antes de medir.
       steps:
         - setWeight: 20
         - pause:
-            duration: 20s
+            duration: 45s
         - analysis:
             templates:
-              - templateName: api-gateway-health-check
+              - templateName: api-gateway-metricas-canary
+            args:
+              - name: canary-hash
+                valueFrom:
+                  podTemplateHashValue: Latest
         - setWeight: 50
         - pause:
             duration: 20s
@@ -71,10 +78,24 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.puerto }}
+            # P10: metricas del SDK de OpenTelemetry (exportador Prometheus).
+            - name: metricas
+              containerPort: 9464
           envFrom:
             {{- include "sa-platform.envFromComun" . | nindent 12 }}
           env:
             {{- include "sa-platform.envSecretos" . | nindent 12 }}
+            # P10: telemetria. El nombre del servicio identifica trazas,
+            # metricas y registros; el resto sale de global.otelEnv.
+            - name: OTEL_SERVICE_NAME
+              value: {{ $nombre | quote }}
+            {{- range $k, $v := .Values.global.otelEnv }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            # P10: fallo inducido (fraccion de peticiones /api que responden 500).
+            - name: TASA_FALLO
+              value: {{ .Values.tasaFallo | default "0" | quote }}
             - name: SIMULAR_FALLO
               value: {{ .Values.simularFallo | default "false" | quote }}
           {{- include "sa-platform.probes" . | nindent 10 }}

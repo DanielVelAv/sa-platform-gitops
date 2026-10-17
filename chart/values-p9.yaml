@@ -21,6 +21,10 @@ global:
   imagePullPolicy: IfNotPresent
   security:
     allowInsecureImages: true
+  # P10: variables comunes de OpenTelemetry para los servicios instrumentados.
+  otelEnv:
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observabilidad.svc:4318
+    OTEL_SEMCONV_STABILITY_OPT_IN: http
 
 secrets:
   gestionExterna: true
@@ -43,9 +47,16 @@ networkPolicies:
 api-gateway:
   image:
     repository: ghcr.io/danielvelav/sa-p9/api-gateway
-    tag: v1.0.0
+    tag: 0a1bbef
   replicas: 2
   simularFallo: "false"
+  # P10: fallo inducido (0 = apagado). Ver P10/README.md.
+  tasaFallo: "0"
+  # P10: umbrales del analisis por metricas del canary.
+  analisis:
+    prometheus: http://monitoring-prometheus.observabilidad.svc:9090
+    maxTasaError: 0.05
+    maxLatenciaP95: 0.5
   hpa:
     enabled: false
   # PREFERIDA y no requerida: durante el canary existe un pod extra; con
@@ -67,8 +78,10 @@ api-gateway:
 ms-auth:
   image:
     repository: ghcr.io/danielvelav/sa-p9/ms-auth
-    tag: v1.0.0
+    tag: 0a1bbef
   replicas: 2
+  # P10: fallo inducido para el recorrido sintoma -> causa ("true" lo activa).
+  falloBD: "false"
   hpa:
     enabled: false
   # Con anti-afinidad REQUERIDA y 2 workers no cabe un pod extra (surge):
@@ -86,8 +99,25 @@ ms-auth:
             matchLabels:
               app.kubernetes.io/name: ms-auth
 
+# P10: tercer servicio instrumentado (gateway -> ms-lotes -> PostgreSQL).
 ms-lotes:
-  enabled: false
+  enabled: true
+  image:
+    repository: ghcr.io/danielvelav/sa-p9/ms-lotes
+    tag: 0a1bbef
+  replicas: 2
+  hpa:
+    enabled: false
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: ms-lotes
 
 ms-aprobaciones:
   enabled: false

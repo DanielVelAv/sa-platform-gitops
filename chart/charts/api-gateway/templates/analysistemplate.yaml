@@ -1,37 +1,43 @@
-{{- $nombre := .Values.nombre -}}
-{{- $ctx := dict "raiz" . "componente" $nombre -}}
-{{/*
-AnalysisTemplate real: consulta el endpoint /health de api-gateway por
-HTTP de verdad (provider "web"), no una simulacion. Si suficientes
-mediciones fallan, Argo Rollouts marca el AnalysisRun como Failed y
-revierte el canary automaticamente -- es el mecanismo de reversion
-que exige el enunciado.
+{{- /*
+P10: el canary deja de decidir con una prueba sintetica (el /health de la
+P8) y pasa a decidir con el TRAFICO REAL medido en Prometheus, solo sobre
+los pods de la version candidata (etiqueta rollouts-pod-template-hash del
+pod canary, que el PodMonitor copia a cada serie).
 
-El nombre del Service y el namespace ya se conocen al momento en que
-Helm renderiza este archivo (no cambian en tiempo de ejecucion), asi
-que se interpolan directo con Helm -- sin variables diferidas de Argo,
-que solo agregan riesgo de sintaxis sin necesidad real aqui.
-
-successCondition compara contra la cadena "ok" (no un booleano): el
-endpoint real devuelve {"estado":"ok",...}, y jsonPath extrae ese
-campo como texto.
-*/}}
+- tasa-de-error: fraccion de respuestas 5xx a peticiones de usuarios (/api).
+- latencia-p95: percentil 95 de la duracion de esas peticiones.
+Si una de las dos supera su umbral en mas de failureLimit mediciones, el
+AnalysisRun falla y Argo Rollouts aborta el canary (vuelve a la estable)
+sin intervencion humana. Sin trafico (division por cero) cuenta como 0.
+*/ -}}
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata:
-  name: api-gateway-health-check
+  name: api-gateway-metricas-canary
   namespace: {{ .Values.global.namespace | quote }}
 spec:
+  args:
+    - name: canary-hash
   metrics:
-    - name: health-check-200
-      # Se repite 5 veces, cada 10s: tiempo real para que el pod nuevo
-      # este listo, no una comprobacion instantanea fingida.
-      interval: 10s
-      count: 5
-      successCondition: "result == \"ok\""
-      failureLimit: 2
+    - name: tasa-de-error
+      interval: 30s
+      count: 4
+      failureLimit: 1
+      successCondition: "result[0] < {{ .Values.analisis.maxTasaError | default 0.05 }}"
       provider:
-        web:
-          url: "http://{{ include "sa-platform.nombreCompleto" $ctx }}-canary.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.puerto }}/health"
-          timeoutSeconds: 5
-          jsonPath: "{$.estado}"
+        prometheus:
+          address: {{ .Values.analisis.prometheus | quote }}
+          query: |
+            (sum(rate(http_server_request_duration_count{namespace="{{ .Values.global.namespace }}", servicio="api-gateway", rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}", http_route=~"/api.*", http_response_status_code=~"5.."}[1m])) or vector(0))
+            /
+            (sum(rate(http_server_request_duration_count{namespace="{{ .Values.global.namespace }}", servicio="api-gateway", rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}", http_route=~"/api.*"}[1m])) > 0 or vector(1))
+    - name: latencia-p95
+      interval: 30s
+      count: 4
+      failureLimit: 1
+      successCondition: "result[0] < {{ .Values.analisis.maxLatenciaP95 | default 0.5 }}"
+      provider:
+        prometheus:
+          address: {{ .Values.analisis.prometheus | quote }}
+          query: |
+            histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_bucket{namespace="{{ .Values.global.namespace }}", servicio="api-gateway", rollouts_pod_template_hash="{{ "{{" }}args.canary-hash{{ "}}" }}", http_route=~"/api.*"}[1m]))) or vector(0)

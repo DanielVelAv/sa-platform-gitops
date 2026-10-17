@@ -14,8 +14,12 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
+      {{- with .Values.rollingUpdate }}
+      {{- toYaml . | nindent 6 }}
+      {{- else }}
       maxUnavailable: 0
       maxSurge: 1
+      {{- end }}
   selector:
     matchLabels:
       {{- include "sa-platform.etiquetasSelector" $ctx | nindent 6 }}
@@ -33,6 +37,12 @@ spec:
       securityContext:
         runAsNonRoot: {{ .Values.global.securityContext.runAsNonRoot | default true }}
         fsGroup: {{ .Values.global.securityContext.runAsGroup | default 1000 }}
+      {{- with .Values.affinity }}
+      # P9: anti-afinidad para que las replicas queden en nodos distintos
+      # y el servicio sobreviva al drenaje de un nodo.
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ $nombre | quote }}
           image: {{ include "sa-platform.imagen" . | quote }}
@@ -40,10 +50,21 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.puerto }}
+            # P10: metricas del SDK de OpenTelemetry (exportador Prometheus).
+            - name: metricas
+              containerPort: 9464
           envFrom:
             {{- include "sa-platform.envFromComun" . | nindent 12 }}
           env:
             {{- include "sa-platform.envSecretos" . | nindent 12 }}
+            # P10: telemetria. El nombre del servicio identifica trazas,
+            # metricas y registros; el resto sale de global.otelEnv.
+            - name: OTEL_SERVICE_NAME
+              value: {{ $nombre | quote }}
+            {{- range $k, $v := .Values.global.otelEnv }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
           {{- include "sa-platform.probes" . | nindent 10 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

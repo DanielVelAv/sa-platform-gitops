@@ -1,0 +1,25 @@
+# Prometheus lee las metricas del SDK de OpenTelemetry directamente de cada
+# pod (puerto "metricas", :9464). Leer el pod -y no un agregado- conserva la
+# etiqueta rollouts-pod-template-hash: asi el analisis del canary mide SOLO
+# la version candidata.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: sa-platform
+  namespace: observabilidad
+spec:
+  namespaceSelector:
+    matchNames: [sa-p9-produccion]
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [api-gateway, ms-auth, ms-lotes]
+  podTargetLabels:
+    - rollouts-pod-template-hash
+  podMetricsEndpoints:
+    - port: metricas
+      interval: 15s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          targetLabel: servicio

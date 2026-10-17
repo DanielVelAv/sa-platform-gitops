@@ -50,10 +50,24 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.puerto }}
+            # P10: metricas del SDK de OpenTelemetry (exportador Prometheus).
+            - name: metricas
+              containerPort: 9464
           envFrom:
             {{- include "sa-platform.envFromComun" . | nindent 12 }}
           env:
             {{- include "sa-platform.envSecretos" . | nindent 12 }}
+            # P10: telemetria. El nombre del servicio identifica trazas,
+            # metricas y registros; el resto sale de global.otelEnv.
+            - name: OTEL_SERVICE_NAME
+              value: {{ $nombre | quote }}
+            {{- range $k, $v := .Values.global.otelEnv }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            # P10: fallo inducido para el recorrido sintoma -> causa.
+            - name: FALLO_BD
+              value: {{ .Values.falloBD | default "false" | quote }}
           {{- include "sa-platform.probes" . | nindent 10 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
