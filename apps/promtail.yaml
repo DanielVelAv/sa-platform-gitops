@@ -1,0 +1,38 @@
+# P10 - Envia a Loki la salida estandar de los pods (registros JSON).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: promtail
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: promtail
+    targetRevision: 6.17.1
+    helm:
+      valuesObject:
+        config:
+          clients:
+            - url: http://loki.observabilidad.svc:3100/loki/api/v1/push
+          snippets:
+            # trace_id como etiqueta indexada no: se extrae en la consulta
+            # con "| json". Solo se agrega el nivel para filtrar rapido.
+            pipelineStages:
+              - cri: {}
+              - json:
+                  expressions: { level: level }
+              - labels: { level: "" }
+        resources:
+          requests: { cpu: 20m, memory: 48Mi }
+          limits: { memory: 128Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observabilidad
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

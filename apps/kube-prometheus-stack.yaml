@@ -1,0 +1,108 @@
+# P10 - Metricas y alertas: Prometheus + Alertmanager + Grafana (+ operador).
+# Wave -2: sus CRDs (PodMonitor, PrometheusRule) los usan sa-platform y
+# observabilidad/. Recortado para un cluster kind de laptop:
+#   - sin reglas ni alertas por defecto (solo las nuestras, cada una con runbook)
+#   - sin node-exporter ni componentes de control-plane que kind no expone
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.10.1
+    helm:
+      releaseName: monitoring
+      valuesObject:
+        fullnameOverride: monitoring
+        defaultRules:
+          create: false
+        nodeExporter:
+          enabled: false
+        kubeEtcd: { enabled: false }
+        kubeControllerManager: { enabled: false }
+        kubeScheduler: { enabled: false }
+        kubeProxy: { enabled: false }
+        prometheusOperator:
+          admissionWebhooks: { enabled: false }
+          tls: { enabled: false }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+        prometheus:
+          prometheusSpec:
+            scrapeInterval: 15s
+            evaluationInterval: 15s
+            retention: 2d
+            # Lee PodMonitor/ServiceMonitor/PrometheusRule de cualquier namespace.
+            podMonitorSelectorNilUsesHelmValues: false
+            serviceMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            resources:
+              requests: { cpu: 100m, memory: 300Mi }
+              limits: { memory: 1Gi }
+        alertmanager:
+          alertmanagerSpec:
+            resources:
+              requests: { cpu: 10m, memory: 32Mi }
+              limits: { memory: 128Mi }
+        kube-state-metrics:
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+        grafana:
+          adminPassword: admin
+          # Acceso local (port-forward) sin login para la demostracion.
+          grafana.ini:
+            auth.anonymous:
+              enabled: true
+              org_role: Admin
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              searchNamespace: ALL
+          additionalDataSources:
+            - name: Loki
+              uid: loki
+              type: loki
+              url: http://loki.observabilidad.svc:3100
+              jsonData:
+                # Del registro a su traza: el trace_id del JSON abre Tempo.
+                derivedFields:
+                  - name: trace_id
+                    matcherType: label
+                    matcherRegex: trace_id
+                    datasourceUid: tempo
+                    url: "$${__value.raw}"
+            - name: Tempo
+              uid: tempo
+              type: tempo
+              url: http://tempo.observabilidad.svc:3200
+              jsonData:
+                # De la traza a sus registros en Loki.
+                tracesToLogsV2:
+                  datasourceUid: loki
+                  spanStartTimeShift: "-5m"
+                  spanEndTimeShift: "5m"
+                  filterByTraceID: false
+                  customQuery: true
+                  query: '{namespace="sa-p9-produccion"} | json | trace_id="$${__trace.traceId}"'
+                serviceMap:
+                  datasourceUid: prometheus
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observabilidad
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

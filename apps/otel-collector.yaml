@@ -1,0 +1,53 @@
+# P10 - OpenTelemetry Collector: punto unico de entrada de las trazas
+# (OTLP) de los servicios; las procesa en lotes y las envia a Tempo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.176.0
+    helm:
+      valuesObject:
+        fullnameOverride: otel-collector
+        mode: deployment
+        image:
+          repository: otel/opentelemetry-collector-contrib
+        resources:
+          requests: { cpu: 50m, memory: 96Mi }
+          limits: { memory: 256Mi }
+        config:
+          receivers:
+            otlp:
+              protocols:
+                grpc: { endpoint: "0.0.0.0:4317" }
+                http: { endpoint: "0.0.0.0:4318" }
+          processors:
+            memory_limiter: { check_interval: 5s, limit_percentage: 80, spike_limit_percentage: 25 }
+            batch: {}
+          exporters:
+            otlp:
+              endpoint: tempo.observabilidad.svc:4317
+              tls: { insecure: true }
+          service:
+            pipelines:
+              traces:
+                receivers: [otlp]
+                processors: [memory_limiter, batch]
+                exporters: [otlp]
+              metrics: null
+              logs: null
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observabilidad
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
