@@ -1,0 +1,27 @@
+# Respaldo de la llave de Sealed Secrets (tercera copia, ademas del estado
+# remoto de Terraform y la copia fuera de linea del operador).
+#   - Solo el Secret de kube-system con la etiqueta "active" (la llave).
+#   - Diario, retencion 7 dias, destino R2 (fuera del cluster).
+#   - En el bucket queda en claro: el bucket es privado y su token esta
+#     limitado a el; es el mismo nivel de confianza que el estado remoto.
+# Restauracion: RUNBOOK seccion D.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: sa-p9-llave-sealed-secrets
+  namespace: velero
+spec:
+  schedule: "15 3 * * *"
+  useOwnerReferencesInBackup: false
+  template:
+    ttl: 168h0m0s
+    storageLocation: default
+    includedNamespaces:
+      - kube-system
+    includedResources:
+      - secrets
+    labelSelector:
+      matchLabels:
+        sealedsecrets.bitnami.com/sealed-secrets-key: active
+    snapshotVolumes: false
+    defaultVolumesToFsBackup: false
