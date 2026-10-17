@@ -81,8 +81,7 @@ spec:
                 # Del registro a su traza: el trace_id del JSON abre Tempo.
                 derivedFields:
                   - name: trace_id
-                    matcherType: label
-                    matcherRegex: trace_id
+                    matcherRegex: '"trace_id":"(\w+)"'
                     datasourceUid: tempo
                     url: "$${__value.raw}"
             - name: Tempo
